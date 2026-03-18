@@ -1,4 +1,6 @@
 {
+  "manifest_version": 3,
+  "version": "1.0.0",
   "name": "W4GGJ Amateur Radio Log",
   "short_name": "W4GGJ Log",
   "description": "Amateur radio QSO logger for W4GGJ / GrumpaGrinch",
