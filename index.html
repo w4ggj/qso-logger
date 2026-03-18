@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>W4GGJ — Amateur Radio Log</title>
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="W4GGJ Log">
+<meta name="theme-color" content="#030c04">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #00ff41;
+    --green-dim: #00a82b;
+    --green-glow: #00ff4155;
+    --bg: #030c04;
+    --bg2: #060f07;
+    --bg3: #0a1a0b;
+    --amber: #ffb000;
+    --red: #ff3333;
+    --border: #1a3d1c;
+    --text-muted: #3a7a3d;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.15) 2px,
+      rgba(0,0,0,0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* CRT flicker */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  /* HEADER */
+  header {
+    border: 2px solid var(--green);
+    padding: 20px 30px;
+    margin-bottom: 24px;
+    position: relative;
+    background: var(--bg2);
+    box-shadow: 0 0 30px var(--green-glow), inset 0 0 30px rgba(0,255,65,0.03);
+  }
+
+  header::before {
+    content: '';
+    position: absolute;
+    top: 4px; left: 4px; right: 4px; bottom: 4px;
+    border: 1px solid var(--green-dim);
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .callsign {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(2rem, 6vw, 3.8rem);
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 40px var(--green-glow);
+    animation: flicker 8s infinite;
+  }
+
+  @keyframes flicker {
+    0%,96%,100% { opacity: 1; }
+    97% { opacity: 0.85; }
+    98% { opacity: 1; }
+    99% { opacity: 0.9; }
+  }
+
+  .nickname {
+    font-family: 'VT323', monospace;
+    font-size: clamp(1.2rem, 3vw, 1.8rem);
+    color: var(--amber);
+    text-shadow: 0 0 10px rgba(255,176,0,0.6);
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+
+  .header-meta {
+    text-align: right;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.9;
+    letter-spacing: 0.05em;
+  }
+
+  .header-meta span { color: var(--green-dim); }
+
+  .live-clock {
+    color: var(--amber);
+    font-size: 1rem;
+    text-shadow: 0 0 8px rgba(255,176,0,0.5);
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 0.1em;
+  }
+  .clock-sep { color: var(--text-muted); margin: 0 4px; }
+  #clock-local { color: var(--green-dim); font-size: 0.88rem; }
+
+  /* CONTROLS */
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  input, select, textarea {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.88rem;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    width: 100%;
+    letter-spacing: 0.05em;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--green-dim);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+
+  select option { background: var(--bg3); }
+
+  textarea { resize: vertical; min-height: 60px; }
+
+  .btn {
+    background: transparent;
+    border: 2px solid var(--green);
+    color: var(--green);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    padding: 10px 20px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--green);
+    transform: translateX(-101%);
+    transition: transform 0.2s;
+    z-index: 0;
+  }
+
+  .btn:hover::before { transform: translateX(0); }
+  .btn:hover { color: var(--bg); box-shadow: 0 0 20px var(--green-glow); }
+  .btn span { position: relative; z-index: 1; }
+
+  .btn-amber {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  .btn-amber::before { background: var(--amber); }
+  .btn-amber:hover { color: var(--bg); }
+
+  .btn-red {
+    border-color: var(--red);
+    color: var(--red);
+    border-width: 1px;
+    font-size: 0.65rem;
+    padding: 6px 10px;
+  }
+  .btn-red::before { background: var(--red); }
+  .btn-red:hover { color: #fff; }
+
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+
+  /* STATUS BAR */
+  .status-bar {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 8px 16px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    letter-spacing: 0.05em;
+  }
+
+  .status-bar .stat { color: var(--green-dim); }
+  .status-bar .stat strong { color: var(--green); }
+
+  /* LOG TABLE */
+  .log-wrapper {
+    border: 2px solid var(--border);
+    background: var(--bg2);
+    overflow-x: auto;
+    box-shadow: 0 0 20px rgba(0,255,65,0.04);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+
+  thead tr {
+    border-bottom: 2px solid var(--green-dim);
+    background: var(--bg3);
+  }
+
+  th {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: var(--green-dim);
+    padding: 12px 14px;
+    text-align: left;
+    white-space: nowrap;
+    text-transform: uppercase;
+  }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  tr:hover td { background: rgba(0,255,65,0.04); }
+
+  .td-call { color: var(--green); font-weight: bold; letter-spacing: 0.08em; font-size: 0.9rem; }
+  .td-freq { color: var(--amber); }
+  .td-mode { color: var(--green-dim); }
+  .td-rst  { color: #aaffaa; }
+  .td-notes { color: var(--text-muted); font-size: 0.78rem; white-space: normal; max-width: 220px; }
+  .td-date { color: var(--text-muted); font-size: 0.75rem; }
+  .td-time { color: var(--green-dim); }
+  .td-band { color: #66ccff; font-size: 0.78rem; }
+
+  .empty-log {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-family: 'VT323', monospace;
+    font-size: 1.4rem;
+    letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .empty-log .blink {
+    animation: blink 1.2s step-end infinite;
+    color: var(--green-dim);
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* FOOTER */
+  footer {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Notification toast */
+  #toast {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: var(--bg3);
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    padding: 12px 20px;
+    letter-spacing: 0.08em;
+    box-shadow: 0 0 20px var(--green-glow);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+    z-index: 9000;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* Search */
+  .search-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .search-row input { max-width: 300px; }
+  .search-label { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; }
+
+  .td-pota { white-space: nowrap; font-size: 0.78rem; }
+  .pota-badge {
+    display: inline-block;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+  }
+  .pota-activator { background: var(--amber); color: var(--bg); }
+  .pota-hunter    { background: #66ccff; color: var(--bg); }
+  .pota-park { color: var(--green-dim); font-size: 0.75rem; letter-spacing: 0.05em; }
+
+  #pota-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0; right: 0;
+    background: var(--bg3);
+    border: 1px solid var(--green-dim);
+    z-index: 100;
+    max-height: 220px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 4px 20px rgba(0,255,65,0.15);
+  }
+  #pota-dropdown.open { display: block; }
+  .pota-option {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  .pota-option:hover { background: rgba(0,255,65,0.08); }
+  .pota-option:last-child { border-bottom: none; }
+  .pota-opt-ref { color: var(--amber); font-size: 0.8rem; font-weight: bold; letter-spacing: 0.08em; }
+  .pota-opt-name { color: var(--green); font-size: 0.82rem; margin-top: 1px; }
+  .pota-opt-loc { color: var(--text-muted); font-size: 0.72rem; margin-top: 1px; }
+  .pota-searching { padding: 10px 12px; color: var(--text-muted); font-size: 0.78rem; }
+  #pota-selected {
+    margin-top: 5px;
+    font-size: 0.75rem;
+    color: var(--green-dim);
+    min-height: 16px;
+    letter-spacing: 0.04em;
+  }
+  #pota-selected.has-park { color: var(--amber); }
+
+  /* QRZ settings panel */
+  .qrz-panel {
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .qrz-panel label { font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.15em; white-space: nowrap; }
+  .qrz-panel input { max-width: 280px; font-size: 0.82rem; }
+  .qrz-status { font-size: 0.72rem; letter-spacing: 0.05em; white-space: nowrap; }
+  .qrz-status.ok  { color: #00ff41; }
+  .qrz-status.err { color: var(--red); }
+  .qrz-status.pending { color: var(--amber); }
+  .qrz-toggle { font-size: 0.65rem; color: var(--text-muted); cursor: pointer; letter-spacing: 0.1em; border-bottom: 1px dashed var(--text-muted); background: none; border-top: none; border-left: none; border-right: none; padding: 0; }
+  .qrz-toggle:hover { color: var(--green); border-color: var(--green); }
+  td.td-qrz { font-size: 0.7rem; white-space: nowrap; }
+  .qrz-sent { color: #00ff41; }
+  .qrz-fail { color: var(--red); cursor: pointer; }
+  .qrz-pending { color: var(--amber); }
+
+  @media (max-width: 600px) {
+    .callsign { font-size: 2rem; }
+    .header-meta { text-align: left; }
+    .header-top { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-top">
+      <div>
+        <div class="callsign">W4GGJ</div>
+        <div class="nickname">// GrumpaGrinch</div>
+      </div>
+      <div class="header-meta">
+        AMATEUR RADIO STATION LOG<br>
+        <span>GRID:</span> <input type="text" id="grid-input" value="EL87PT" maxlength="8" title="Click to edit grid square" style="background:transparent;border:none;border-bottom:1px solid var(--green-dim);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:0.78rem;width:72px;padding:0 2px;letter-spacing:0.08em;text-transform:uppercase;outline:none;" oninput="saveGrid(this.value)"> <button onclick="gpsGrid()" id="gps-btn" title="Update grid from GPS" style="background:transparent;border:1px solid var(--green-dim);color:var(--green-dim);font-family:'Share Tech Mono',monospace;font-size:0.65rem;padding:1px 5px;cursor:pointer;letter-spacing:0.05em;transition:all 0.2s;" onmouseover="this.style.color='var(--green)';this.style.borderColor='var(--green)'" onmouseout="this.style.color='var(--green-dim)';this.style.borderColor='var(--green-dim)'">GPS</button> &nbsp;|&nbsp; <span>QTH:</span> TAMPA BAY, FL<br>
+        <span>LICENSE CLASS:</span> GENERAL<br>
+        <div class="live-clock" id="clock"><span id="clock-utc">--:--:-- UTC</span> <span class="clock-sep">/</span> <span id="clock-local">--:-- LCL</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ENTRY FORM -->
+  <div class="controls">
+    <div class="field-group">
+      <label>Date (UTC)</label>
+      <input type="date" id="inp-date">
+    </div>
+    <div class="field-group">
+      <label>Time (UTC)</label>
+      <input type="time" id="inp-time">
+    </div>
+    <div class="field-group">
+      <label>Callsign Worked</label>
+      <input type="text" id="inp-call" placeholder="e.g. KD9XYZ" maxlength="12" style="text-transform:uppercase">
+    </div>
+    <div class="field-group">
+      <label>Frequency (MHz)</label>
+      <input type="text" id="inp-freq" placeholder="14.225">
+    </div>
+    <div class="field-group">
+      <label>Band</label>
+      <select id="inp-band">
+        <option value="">-- Band --</option>
+        <option>160m</option><option>80m</option><option>60m</option>
+        <option>40m</option><option>30m</option><option>20m</option>
+        <option>17m</option><option>15m</option><option>12m</option>
+        <option>10m</option><option>6m</option><option>2m</option>
+        <option>70cm</option><option>Other</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>Mode</label>
+      <select id="inp-mode">
+        <option value="">-- Mode --</option>
+        <option>SSB</option><option>CW</option><option>FM</option>
+        <option>AM</option><option>FT8</option><option>FT4</option>
+        <option>PSK31</option><option>RTTY</option><option>JS8</option>
+        <option>DMR</option><option>D-STAR</option><option>Other</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>RST Sent</label>
+      <input type="text" id="inp-rst-s" placeholder="59" maxlength="5">
+    </div>
+    <div class="field-group">
+      <label>RST Rcvd</label>
+      <input type="text" id="inp-rst-r" placeholder="57" maxlength="5">
+    </div>
+    <div class="field-group">
+      <label>POTA Role</label>
+      <select id="inp-pota-role">
+        <option value="">-- None --</option>
+        <option value="activator">Activator (my park)</option>
+        <option value="hunter">Hunter (their park)</option>
+      </select>
+    </div>
+    <div class="field-group" style="position:relative;">
+      <label>Park Search</label>
+      <input type="text" id="inp-pota-search" placeholder="Search park name or ID…" autocomplete="off" oninput="potaSearch(this.value)">
+      <div id="pota-dropdown"></div>
+      <input type="hidden" id="inp-pota-park">
+      <div id="pota-selected"></div>
+    </div>
+    <div class="field-group" style="grid-column: span 2;">
+      <label>Name / QTH / Notes</label>
+      <textarea id="inp-notes" placeholder="Op name, their location, antenna info, contest info..."></textarea>
+    </div>
+  </div>
+
+  <!-- QRZ LOGBOOK PANEL -->
+  <div class="qrz-panel">
+    <label>QRZ API KEY</label>
+    <input type="password" id="qrz-api-key" placeholder="Paste your QRZ API key…" style="flex:1;" oninput="saveQrzKey(this.value)">
+    <button class="btn btn-amber" onclick="testQrz()" style="padding:8px 14px;font-size:0.68rem;"><span>TEST</span></button>
+    <span class="qrz-status" id="qrz-status">—</span>
+    <button class="qrz-toggle" onclick="toggleQrzHelp()">HOW TO GET KEY ▾</button>
+  </div>
+  <div id="qrz-help" style="display:none;background:var(--bg2);border:1px solid var(--border);border-top:none;padding:12px 18px;font-size:0.72rem;color:var(--text-muted);line-height:1.8;margin-bottom:20px;letter-spacing:0.04em;">
+    1. Log in to <strong style="color:var(--green-dim)">qrz.com</strong> &rarr; go to <strong style="color:var(--green-dim)">Logbook</strong> &rarr; <strong style="color:var(--green-dim)">Settings</strong><br>
+    2. Under <strong style="color:var(--green-dim)">API Access</strong>, generate or copy your <strong style="color:var(--green-dim)">API Key</strong><br>
+    3. Paste it above and click TEST — a session key will be fetched automatically<br>
+    4. QRZ requires an <strong style="color:var(--amber)">XML Logbook subscription</strong> (paid) to use the logging API
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" onclick="addEntry()"><span>⊕ LOG QSO</span></button>
+    <button class="btn btn-amber" onclick="exportCSV()"><span>⤓ EXPORT CSV</span></button>
+    <button class="btn btn-amber" onclick="exportADIF()"><span>⤓ EXPORT ADIF</span></button>
+    <button class="btn" onclick="clearForm()"><span>✕ CLEAR FORM</span></button>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="status-bar">
+    <div class="stat">TOTAL QSOs: <strong id="stat-total">0</strong></div>
+    <div class="stat">UNIQUE CALLS: <strong id="stat-unique">0</strong></div>
+    <div class="stat">BANDS WORKED: <strong id="stat-bands">—</strong></div>
+    <div class="stat">LAST QSO: <strong id="stat-last">—</strong></div>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-row">
+    <span class="search-label">FILTER:</span>
+    <input type="text" id="search" placeholder="search callsign, notes, mode..." oninput="renderTable()">
+  </div>
+
+  <!-- LOG TABLE -->
+  <div class="log-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Date (UTC)</th>
+          <th>Time (UTC)</th>
+          <th>Callsign</th>
+          <th>Freq MHz</th>
+          <th>Band</th>
+          <th>Mode</th>
+          <th>RST S/R</th>
+          <th>Notes</th>
+          <th>POTA</th>
+          <th>QRZ</th>
+          <th>Del</th>
+        </tr>
+      </thead>
+      <tbody id="log-body">
+        <tr>
+          <td colspan="12" class="empty-log">
+            NO CONTACTS LOGGED YET<br>
+            <span class="blink">█</span> READY TO LOG QSOs
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    W4GGJ &bull; GRUMPAGRINCH &bull; 73 DE W4GGJ &bull; ALL TIMES UTC
+  </footer>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let log = JSON.parse(localStorage.getItem('w4ggj_log') || '[]');
+
+  // Pre-fill date/time
+  function nowUTC() {
+    const n = new Date();
+    const pad = x => String(x).padStart(2,'0');
+    const date = `${n.getUTCFullYear()}-${pad(n.getUTCMonth()+1)}-${pad(n.getUTCDate())}`;
+    const time = `${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}`;
+    return { date, time };
+  }
+
+  function prefill() {
+    const {date,time} = nowUTC();
+    document.getElementById('inp-date').value = date;
+    document.getElementById('inp-time').value = time;
+  }
+  prefill();
+
+  // Live UTC + local clock
+  function updateClock() {
+    const n = new Date();
+    const pad = x => String(x).padStart(2,'0');
+    document.getElementById('clock-utc').textContent =
+      `${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}:${pad(n.getUTCSeconds())} UTC`;
+    document.getElementById('clock-local').textContent =
+      `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())} LCL`;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); }
+
+  // Grid square — editable, persisted
+  function saveGrid(val) {
+    val = val.toUpperCase();
+    document.getElementById('grid-input').value = val;
+    localStorage.setItem('w4ggj_grid', val);
+  }
+  const savedGrid = localStorage.getItem('w4ggj_grid');
+  if (savedGrid) document.getElementById('grid-input').value = savedGrid;
+
+  // QRZ API
+  let qrzSession = null;
+
+  function saveQrzKey(val) { localStorage.setItem('w4ggj_qrz_key', val.trim()); qrzSession = null; }
+
+  function toggleQrzHelp() {
+    const h = document.getElementById('qrz-help');
+    h.style.display = h.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // Load saved QRZ key on startup
+  const savedQrzKey = localStorage.getItem('w4ggj_qrz_key');
+  if (savedQrzKey) document.getElementById('qrz-api-key').value = savedQrzKey;
+
+  function setQrzStatus(msg, cls) {
+    const el = document.getElementById('qrz-status');
+    el.textContent = msg; el.className = 'qrz-status ' + cls;
+  }
+
+  async function getQrzSession() {
+    if (qrzSession) return qrzSession;
+    const key = document.getElementById('qrz-api-key').value.trim();
+    if (!key) { setQrzStatus('NO API KEY', 'err'); return null; }
+    setQrzStatus('CONNECTING…', 'pending');
+    try {
+      const url = `https://xmldata.qrz.com/xml/current/?api=${encodeURIComponent(key)}`;
+      const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+      const txt = await res.text();
+      const match = txt.match(/<Key>([^<]+)<\/Key>/);
+      if (match) {
+        qrzSession = match[1];
+        setQrzStatus('● CONNECTED', 'ok');
+        return qrzSession;
+      }
+      const err = txt.match(/<Error>([^<]+)<\/Error>/);
+      setQrzStatus('✕ ' + (err ? err[1] : 'AUTH FAILED'), 'err');
+      return null;
+    } catch(e) {
+      setQrzStatus('✕ NETWORK ERROR', 'err');
+      return null;
+    }
+  }
+
+  async function testQrz() {
+    qrzSession = null;
+    await getQrzSession();
+  }
+
+  async function logToQrz(entry) {
+    const session = await getQrzSession();
+    if (!session) return 'NO_SESSION';
+    const pad = x => String(x).padStart(2,'0');
+    const dateStr = entry.date.replace(/-/g,'');
+    const timeStr = entry.time.replace(':','') + '00';
+    const grid = document.getElementById('grid-input').value.trim();
+    let adif = `<CALL:${entry.call.length}>${entry.call}`;
+    adif += ` <QSO_DATE:8>${dateStr}`;
+    adif += ` <TIME_ON:6>${timeStr}`;
+    if (entry.freq) adif += ` <FREQ:${entry.freq.length}>${entry.freq}`;
+    if (entry.band) adif += ` <BAND:${entry.band.length}>${entry.band}`;
+    if (entry.mode) adif += ` <MODE:${entry.mode.length}>${entry.mode}`;
+    if (entry.rstS) adif += ` <RST_SENT:${entry.rstS.length}>${entry.rstS}`;
+    if (entry.rstR) adif += ` <RST_RCVD:${entry.rstR.length}>${entry.rstR}`;
+    if (grid)       adif += ` <MY_GRIDSQUARE:${grid.length}>${grid}`;
+    if (entry.potaPark) adif += ` <MY_POTA_REF:${entry.potaPark.length}>${entry.potaPark}`;
+    adif += ` <STATION_CALLSIGN:5>W4GGJ <EOR>`;
+    try {
+      const url = `https://xmldata.qrz.com/xml/current/?action=INSERT&KEY=${encodeURIComponent(session)}&ADIF=${encodeURIComponent(adif)}`;
+      const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+      const txt = await res.text();
+      if (txt.includes('<result>OK</result>') || txt.includes('REPLACE') || txt.includes('INSERT')) return 'OK';
+      const err = txt.match(/<Error>([^<]+)<\/Error>/);
+      if (err && err[1].includes('session')) { qrzSession = null; return 'SESSION_EXPIRED'; }
+      return 'FAIL: ' + (err ? err[1] : 'UNKNOWN');
+    } catch(e) { return 'NETWORK_ERROR'; }
+  }
+
+  // Maidenhead grid from lat/lon (6-character precision)
+  function latLonToGrid(lat, lon) {
+    const A = 'A'.charCodeAt(0);
+    lon += 180; lat += 90;
+    const f1 = String.fromCharCode(A + Math.floor(lon / 20));
+    const f2 = String.fromCharCode(A + Math.floor(lat / 10));
+    const f3 = String(Math.floor((lon % 20) / 2));
+    const f4 = String(Math.floor(lat % 10));
+    const f5 = String.fromCharCode(A + Math.floor((lon % 2) / (2/24)));
+    const f6 = String.fromCharCode(A + Math.floor((lat % 1) / (1/24)));
+    return (f1 + f2 + f3 + f4 + f5.toLowerCase() + f6.toLowerCase());
+  }
+
+  function gpsGrid() {
+    if (!navigator.geolocation) { toast('⚠ GPS NOT SUPPORTED'); return; }
+    const btn = document.getElementById('gps-btn');
+    btn.textContent = '…';
+    btn.style.color = 'var(--amber)';
+    btn.style.borderColor = 'var(--amber)';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const grid = latLonToGrid(pos.coords.latitude, pos.coords.longitude);
+        saveGrid(grid);
+        btn.textContent = 'GPS';
+        btn.style.color = 'var(--green)';
+        btn.style.borderColor = 'var(--green)';
+        toast(`GRID UPDATED: ${grid}`);
+        setTimeout(() => {
+          btn.style.color = 'var(--green-dim)';
+          btn.style.borderColor = 'var(--green-dim)';
+        }, 3000);
+      },
+      err => {
+        btn.textContent = 'GPS';
+        btn.style.color = 'var(--green-dim)';
+        btn.style.borderColor = 'var(--green-dim)';
+        const msgs = ['','PERMISSION DENIED','POSITION UNAVAILABLE','TIMEOUT'];
+        toast('⚠ GPS: ' + (msgs[err.code] || 'ERROR'));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  // POTA park data — bundled offline dataset (Florida-heavy + major US national parks)
+  // Format: [reference, name, location]
+  const POTA_PARKS = [
+    // Tampa Bay Area State Parks (closest first)
+    ["K-F029","Hillsborough River SP","Hillsborough County, FL"],
+    ["K-F077","Alafia River SP","Hillsborough County, FL"],
+    ["K-F030","Honeymoon Island SP","Pinellas County, FL"],
+    ["K-F007","Caladesi Island SP","Pinellas County, FL"],
+    ["K-F053","Oscar Scherer SP","Sarasota County, FL"],
+    ["K-F038","Lake Manatee SP","Manatee County, FL"],
+    ["K-F041","Little Manatee River SP","Hillsborough County, FL"],
+    ["K-F044","Lover's Key SP","Lee County, FL"],
+    ["K-F013","Delnor-Wiggins Pass SP","Collier County, FL"],
+    ["K-F048","Myakka River SP","Sarasota County, FL"],
+    ["K-F010","Collier-Seminole SP","Collier County, FL"],
+    ["K-F033","Jonathan Dickinson SP","Martin County, FL"],
+    ["K-F074","Wekiwa Springs SP","Orange County, FL"],
+    ["K-F036","Lake Kissimmee SP","Polk County, FL"],
+    ["K-F037","Lake Louisa SP","Lake County, FL"],
+    ["K-F035","Lake Griffin SP","Lake County, FL"],
+    ["K-F039","Lake Talquin SP","Leon County, FL"],
+    ["K-F034","Kissimmee Prairie Preserve SP","Okeechobee County, FL"],
+    ["K-F004","Bill Baggs Cape Florida SP","Miami-Dade County, FL"],
+    ["K-F024","Fort Pierce Inlet SP","St. Lucie County, FL"],
+    ["K-F026","Gamble Rogers Memorial SRA","Flagler County, FL"],
+    ["K-F063","Sebastian Inlet SP","Indian River County, FL"],
+    // Rest of Florida State Parks
+    ["K-F001","Anastasia SP","St. Johns County, FL"],
+    ["K-F002","Bahia Honda SP","Monroe County, FL"],
+    ["K-F003","Big Lagoon SP","Escambia County, FL"],
+    ["K-F005","Blackwater River SP","Santa Rosa County, FL"],
+    ["K-F006","Blue Spring SP","Volusia County, FL"],
+    ["K-F008","Cayo Costa SP","Lee County, FL"],
+    ["K-F009","Cedar Key Museum SP","Levy County, FL"],
+    ["K-F011","Crystal River Archaeological SP","Citrus County, FL"],
+    ["K-F012","De Leon Springs SP","Volusia County, FL"],
+    ["K-F014","Devil's Millhopper Geological SP","Alachua County, FL"],
+    ["K-F015","Dudley Farm Historic SP","Alachua County, FL"],
+    ["K-F016","Dunns Creek SP","Putnam County, FL"],
+    ["K-F017","Homosassa Springs Wildlife SP","Citrus County, FL"],
+    ["K-F018","Fakahatchee Strand Preserve SP","Collier County, FL"],
+    ["K-F019","Falling Waters SP","Washington County, FL"],
+    ["K-F020","Fanning Springs SP","Gilchrist County, FL"],
+    ["K-F021","Florida Caverns SP","Jackson County, FL"],
+    ["K-F022","Fort Clinch SP","Nassau County, FL"],
+    ["K-F023","Fort Cooper SP","Citrus County, FL"],
+    ["K-F025","Fort Zachary Taylor Historic SP","Monroe County, FL"],
+    ["K-F027","Gold Head Branch SP","Clay County, FL"],
+    ["K-F028","Grayton Beach SP","Walton County, FL"],
+    ["K-F031","Ichetucknee Springs SP","Columbia County, FL"],
+    ["K-F032","Indian Key Historic SP","Monroe County, FL"],
+    ["K-F040","Lake Wauburg","Alachua County, FL"],
+    ["K-F042","Little Talbot Island SP","Duval County, FL"],
+    ["K-F043","Long Key SP","Monroe County, FL"],
+    ["K-F045","Manatee Springs SP","Levy County, FL"],
+    ["K-F046","Marjorie Kinnan Rawlings Historic SP","Alachua County, FL"],
+    ["K-F047","Mike Roess Gold Head Branch SP","Clay County, FL"],
+    ["K-F049","Natural Bridge Battlefield Historic SP","Leon County, FL"],
+    ["K-F050","Ocala National Forest","Marion County, FL"],
+    ["K-F051","Ochlockonee River SP","Wakulla County, FL"],
+    ["K-F052","O'Leno SP","Columbia County, FL"],
+    ["K-F054","Osceola National Forest","Columbia County, FL"],
+    ["K-F055","Paynes Prairie Preserve SP","Alachua County, FL"],
+    ["K-F056","Perdido Key SP","Escambia County, FL"],
+    ["K-F057","Ponce De Leon Springs SP","Holmes County, FL"],
+    ["K-F058","Rainbow Springs SP","Marion County, FL"],
+    ["K-F059","Ravine Gardens SP","Putnam County, FL"],
+    ["K-F060","River Rise Preserve SP","Columbia County, FL"],
+    ["K-F061","Rocky Bayou SP","Okaloosa County, FL"],
+    ["K-F062","San Felasco Hammock Preserve SP","Alachua County, FL"],
+    ["K-F064","Silver River SP","Marion County, FL"],
+    ["K-F065","Silver Springs SP","Marion County, FL"],
+    ["K-F066","Suwannee River SP","Suwannee County, FL"],
+    ["K-F067","Tarkiln Bayou Preserve SP","Escambia County, FL"],
+    ["K-F068","Three Rivers SP","Jackson County, FL"],
+    ["K-F069","Topsail Hill Preserve SP","Walton County, FL"],
+    ["K-F070","Torreya SP","Liberty County, FL"],
+    ["K-F071","Waccasassa Bay Preserve SP","Levy County, FL"],
+    ["K-F072","Wakulla Springs SP","Wakulla County, FL"],
+    ["K-F073","Washington Oaks Gardens SP","Flagler County, FL"],
+    ["K-F075","Werner-Boyce Salt Springs SP","Pasco County, FL"],
+    ["K-F076","Withlacoochee State Forest","Citrus/Hernando/Pasco County, FL"],
+    ["K-F078","Big Shoals SP","Columbia County, FL"],
+    ["K-F079","Forest Capital Museum SP","Taylor County, FL"],
+    ["K-F080","Alapaha Rise","Hamilton County, FL"],
+    // Florida National Parks / Federal
+    ["K-0008","Everglades National Park","Florida"],["K-0021","Biscayne National Park","Florida"],
+    ["K-0565","Canaveral National Seashore","Florida"],["K-0714","Gulf Islands National Seashore","Florida"],
+    ["K-0718","Ocala National Forest","Florida"],["K-2233","Paynes Prairie Preserve SP","Florida"],
+    // Major US National Parks
+    ["K-0001","Acadia National Park","Maine"],["K-0002","Arches National Park","Utah"],
+    ["K-0003","Badlands National Park","South Dakota"],["K-0004","Big Bend National Park","Texas"],
+    ["K-0005","Bryce Canyon National Park","Utah"],["K-0006","Canyonlands National Park","Utah"],
+    ["K-0007","Capitol Reef National Park","Utah"],
+    ["K-0009","Crater Lake National Park","Oregon"],["K-0010","Denali National Park","Alaska"],
+    ["K-0011","Grand Canyon National Park","Arizona"],["K-0012","Grand Teton National Park","Wyoming"],
+    ["K-0013","Great Smoky Mountains National Park","Tennessee/North Carolina"],
+    ["K-0014","Glacier National Park","Montana"],["K-0015","Joshua Tree National Park","California"],
+    ["K-0016","Mammoth Cave National Park","Kentucky"],["K-0017","Mesa Verde National Park","Colorado"],
+    ["K-0018","Mount Rainier National Park","Washington"],["K-0019","Olympic National Park","Washington"],
+    ["K-0020","Petrified Forest National Park","Arizona"],
+    ["K-0022","Rocky Mountain National Park","Colorado"],["K-0023","Saguaro National Park","Arizona"],
+    ["K-0024","Sequoia National Park","California"],["K-0025","Shenandoah National Park","Virginia"],
+    ["K-0026","Theodore Roosevelt National Park","North Dakota"],
+    ["K-0027","Voyageurs National Park","Minnesota"],["K-0028","Wind Cave National Park","South Dakota"],
+    ["K-0029","Yellowstone National Park","Wyoming/Montana/Idaho"],
+    ["K-0030","Yosemite National Park","California"],["K-0031","Zion National Park","Utah"],
+    ["K-0032","Blue Ridge Parkway","Virginia/North Carolina"],
+    ["K-0033","Natchez Trace Parkway","Mississippi/Alabama/Tennessee"],
+    ["K-0034","Appalachian National Scenic Trail","Eastern US"],
+  ];
+
+  // Build search index
+  const POTA_INDEX = POTA_PARKS.map(([ref, name, loc]) => ({
+    reference: ref,
+    name,
+    locationName: loc,
+    _search: (ref + ' ' + name + ' ' + loc).toLowerCase()
+  }));
+
+  let potaTimer = null;
+  function potaSearch(q) {
+    const dd = document.getElementById('pota-dropdown');
+    q = q.trim();
+    if (q.length < 2) { dd.classList.remove('open'); return; }
+    clearTimeout(potaTimer);
+    potaTimer = setTimeout(() => {
+      const ql = q.toLowerCase();
+      const matches = POTA_INDEX.filter(p => p._search.includes(ql)).slice(0, 12);
+      dd.classList.add('open');
+      if (!matches.length) {
+        // No match — offer manual entry
+        dd.innerHTML = `
+          <div class="pota-searching">NO MATCH IN LOCAL DB</div>
+          <div class="pota-option" onclick="selectPark('${escJs(q.toUpperCase())}','${escJs(q.toUpperCase())}','Manual entry')">
+            <div class="pota-opt-ref">USE: ${q.toUpperCase()}</div>
+            <div class="pota-opt-name">Enter manually as typed</div>
+            <div class="pota-opt-loc">Tip: use format K-1234 or K-F055</div>
+          </div>`;
+        return;
+      }
+      dd.innerHTML = matches.map(p => `
+        <div class="pota-option" onclick="selectPark('${escJs(p.reference)}','${escJs(p.name)}','${escJs(p.locationName)}')">
+          <div class="pota-opt-ref">${p.reference}</div>
+          <div class="pota-opt-name">${p.name}</div>
+          <div class="pota-opt-loc">${p.locationName}</div>
+        </div>`).join('');
+    }, 150);
+  }
+
+  function selectPark(ref, name, loc) {
+    document.getElementById('inp-pota-park').value = ref;
+    document.getElementById('inp-pota-search').value = ref;
+    const sel = document.getElementById('pota-selected');
+    sel.textContent = `✓ ${name}${loc ? ' — ' + loc : ''}`;
+    sel.classList.add('has-park');
+    document.getElementById('pota-dropdown').classList.remove('open');
+  }
+
+  function escJs(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+  // Close dropdown on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#inp-pota-search') && !e.target.closest('#pota-dropdown')) {
+      document.getElementById('pota-dropdown').classList.remove('open');
+    }
+  });
+
+  function addEntry() {
+    const call = document.getElementById('inp-call').value.trim().toUpperCase();
+    if (!call) { toast('⚠ CALLSIGN REQUIRED'); return; }
+
+    const entry = {
+      id: Date.now(),
+      date: document.getElementById('inp-date').value || nowUTC().date,
+      time: document.getElementById('inp-time').value || nowUTC().time,
+      call,
+      freq: document.getElementById('inp-freq').value.trim(),
+      band: document.getElementById('inp-band').value,
+      mode: document.getElementById('inp-mode').value,
+      rstS: document.getElementById('inp-rst-s').value.trim() || '59',
+      rstR: document.getElementById('inp-rst-r').value.trim() || '59',
+      notes: document.getElementById('inp-notes').value.trim(),
+      potaRole: document.getElementById('inp-pota-role').value,
+      potaPark: document.getElementById('inp-pota-park').value.trim().toUpperCase(),
+      qrzStatus: 'pending',
+    };
+
+    log.unshift(entry);
+    save();
+    renderTable();
+    updateStats();
+    clearForm(true);
+    toast(`QSO LOGGED: ${call}`);
+
+    // Upload to QRZ if key is set
+    if (document.getElementById('qrz-api-key').value.trim()) {
+      logToQrz(entry).then(result => {
+        entry.qrzStatus = (result === 'OK') ? 'ok' : 'fail';
+        save();
+        renderTable();
+        toast(result === 'OK' ? `QRZ: ${call} UPLOADED ✓` : `QRZ UPLOAD FAILED: ${result}`);
+      });
+    } else {
+      entry.qrzStatus = 'none';
+      save();
+      renderTable();
+    }
+  }
+
+  function deleteEntry(id) {
+    if (!confirm('Delete this QSO?')) return;
+    log = log.filter(e => e.id !== id);
+    save(); renderTable(); updateStats(); toast('QSO DELETED');
+  }
+
+  async function retryQrz(id) {
+    const entry = log.find(e => e.id === id);
+    if (!entry) return;
+    entry.qrzStatus = 'pending';
+    save(); renderTable();
+    const result = await logToQrz(entry);
+    entry.qrzStatus = (result === 'OK') ? 'ok' : 'fail';
+    save(); renderTable();
+    toast(result === 'OK' ? `QRZ: ${entry.call} UPLOADED ✓` : `QRZ RETRY FAILED: ${result}`);
+  }
+
+  function clearForm(keepDateTime) {
+    ['inp-call','inp-freq','inp-rst-s','inp-rst-r','inp-notes','inp-pota-park'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('inp-band').value = '';
+    document.getElementById('inp-mode').value = '';
+    document.getElementById('inp-pota-role').value = '';
+    document.getElementById('inp-pota-search').value = '';
+    document.getElementById('inp-pota-park').value = '';
+    const sel = document.getElementById('pota-selected');
+    sel.textContent = ''; sel.classList.remove('has-park');
+    document.getElementById('pota-dropdown').classList.remove('open');
+    if (!keepDateTime) prefill();
+    else prefill();
+  }
+
+  function renderTable() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const filtered = q
+      ? log.filter(e =>
+          e.call.toLowerCase().includes(q) ||
+          (e.notes||'').toLowerCase().includes(q) ||
+          (e.mode||'').toLowerCase().includes(q) ||
+          (e.band||'').toLowerCase().includes(q)
+        )
+      : log;
+
+    const tbody = document.getElementById('log-body');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="12" class="empty-log">
+        ${q ? 'NO MATCHES FOR "' + q.toUpperCase() + '"' : 'NO CONTACTS LOGGED YET'}<br>
+        <span class="blink">█</span> ${q ? 'TRY A DIFFERENT SEARCH' : 'READY TO LOG QSOs'}
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((e, i) => {
+      const qrzCell = e.qrzStatus === 'ok'
+        ? `<td class="td-qrz"><span class="qrz-sent">✓ SENT</span></td>`
+        : e.qrzStatus === 'fail'
+        ? `<td class="td-qrz"><span class="qrz-fail" onclick="retryQrz(${e.id})" title="Click to retry">✕ RETRY</span></td>`
+        : e.qrzStatus === 'pending'
+        ? `<td class="td-qrz"><span class="qrz-pending">… SENDING</span></td>`
+        : `<td class="td-qrz" style="color:var(--text-muted)">—</td>`;
+      return `
+      <tr>
+        <td class="td-date">${filtered.length - i}</td>
+        <td class="td-date">${e.date}</td>
+        <td class="td-time">${e.time}z</td>
+        <td class="td-call">${e.call}</td>
+        <td class="td-freq">${e.freq || '—'}</td>
+        <td class="td-band">${e.band || '—'}</td>
+        <td class="td-mode">${e.mode || '—'}</td>
+        <td class="td-rst">${e.rstS}/${e.rstR}</td>
+        <td class="td-notes">${escHtml(e.notes || '—')}</td>
+        <td class="td-pota">${e.potaRole ? `<span class="pota-badge pota-${e.potaRole}">${e.potaRole === 'activator' ? 'ACT' : 'HNT'}</span><br><span class="pota-park">${e.potaPark || '—'}</span>` : '—'}</td>
+        ${qrzCell}
+        <td><button class="btn btn-red" onclick="deleteEntry(${e.id})"><span>DEL</span></button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateStats() {
+    document.getElementById('stat-total').textContent = log.length;
+    const unique = new Set(log.map(e => e.call)).size;
+    document.getElementById('stat-unique').textContent = unique;
+    const bands = [...new Set(log.map(e => e.band).filter(Boolean))];
+    document.getElementById('stat-bands').textContent = bands.length ? bands.join(', ') : '—';
+    document.getElementById('stat-last').textContent = log.length
+      ? `${log[0].call} @ ${log[0].time}z`
+      : '—';
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function exportCSV() {
+    if (!log.length) { toast('NO DATA TO EXPORT'); return; }
+    const hdr = 'Date,Time,Callsign,Frequency,Band,Mode,RST_Sent,RST_Rcvd,Notes\n';
+    const rows = log.map(e =>
+      [e.date,e.time,e.call,e.freq,e.band,e.mode,e.rstS,e.rstR,`"${(e.notes||'').replace(/"/g,'""')}"`].join(',')
+    ).join('\n');
+    download('W4GGJ_log.csv', 'text/csv', hdr + rows);
+    toast('CSV EXPORTED');
+  }
+
+  function exportADIF() {
+    if (!log.length) { toast('NO DATA TO EXPORT'); return; }
+    let adif = 'ADIF Export - W4GGJ GrumpaGrinch\n<ADIF_VER:5>3.1.0\n<PROGRAMID:5>W4GGJ\n<EOH>\n\n';
+    log.forEach(e => {
+      const dateStr = e.date.replace(/-/g,'');
+      const timeStr = e.time.replace(':','') + '00';
+      adif += `<CALL:${e.call.length}>${e.call}`;
+      adif += ` <QSO_DATE:8>${dateStr}`;
+      adif += ` <TIME_ON:6>${timeStr}`;
+      if (e.freq) adif += ` <FREQ:${e.freq.length}>${e.freq}`;
+      if (e.band) adif += ` <BAND:${e.band.length}>${e.band}`;
+      if (e.mode) adif += ` <MODE:${e.mode.length}>${e.mode}`;
+      if (e.rstS) adif += ` <RST_SENT:${e.rstS.length}>${e.rstS}`;
+      if (e.rstR) adif += ` <RST_RCVD:${e.rstR.length}>${e.rstR}`;
+      if (e.notes) adif += ` <COMMENT:${e.notes.length}>${e.notes}`;
+      adif += ` <STATION_CALLSIGN:5>W4GGJ <EOR>\n`;
+    });
+    download('W4GGJ_log.adi', 'text/plain', adif);
+    toast('ADIF EXPORTED');
+  }
+
+  function download(filename, mime, content) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([content], {type: mime}));
+    a.download = filename;
+    a.click();
+  }
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  renderTable();
+  updateStats();
+
+  // Register service worker for PWA/offline support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log('W4GGJ SW registered'))
+      .catch(e => console.warn('SW registration failed:', e));
+  }
+</script>
+</body>
+</html>
