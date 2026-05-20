@@ -643,12 +643,6 @@ tbody tr:hover td { background: rgba(26,58,110,0.04); }
 .pb-hnt { background: var(--blue);  color: #ffffff; }
 .pb-ref { font-family: var(--mono); color: var(--dim); font-size: 0.62rem; letter-spacing: 0.04em; display: block; margin-top: 2px; }
 
-/* QRZ cell */
-.qc-ok  { color: var(--green);  font-size: 0.65rem; }
-.qc-fail { color: var(--red); font-size: 0.65rem; cursor: pointer; text-decoration: underline dashed; }
-.qc-pend { color: var(--amber); font-size: 0.65rem; }
-.qc-none { color: var(--border2); font-size: 0.65rem; }
-
 /* UDP cell */
 .uc-ok   { color: var(--green); font-size: 0.65rem; }
 .uc-fail { color: var(--red);   font-size: 0.65rem; }
@@ -860,7 +854,7 @@ footer {
 
         <!-- QRZ -->
         <div style="margin-top:14px;">
-          <div class="sec-label blue" style="margin-top:0">QRZ Integration</div>
+          <div class="sec-label blue" style="margin-top:0">QRZ Callsign Lookup</div>
 
           <!-- Callsign lookup: username + password -->
           <div style="margin-bottom:6px;">
@@ -885,18 +879,9 @@ footer {
           <div class="qrz-help" id="qrz-help">
             <strong>Callsign lookup</strong> uses your QRZ username &amp; password.<br>
             Requires a <span class="warn">QRZ XML Data subscription</span> for full name/grid/QTH lookup.<br><br>
-            <strong>Logbook upload</strong> uses your QRZ API Key below.<br>
-            1. Log in to <strong>qrz.com</strong> → <strong>Logbook</strong> → <strong>Settings</strong><br>
-            2. Under <strong>API Access</strong>, copy your <strong>API Key</strong><br>
-            3. Requires a <span class="warn">QRZ Logbook subscription</span> (separate from XML)
+            Logbook upload is handled by your home server — nothing to configure here.
           </div>
 
-          <!-- Logbook upload: API key -->
-          <div style="margin-top:10px;">
-            <label style="display:block;margin-bottom:4px;">Logbook Upload — QRZ API Key</label>
-            <input type="password" id="qrz-api-key" placeholder="QRZ Logbook API key…"
-              oninput="saveQrzKey(this.value)" style="width:100%">
-          </div>
         </div>
 
         <!-- UDP Bridge -->
@@ -963,13 +948,12 @@ footer {
             <th>Programs</th>
             <th>Name</th>
             <th>Notes</th>
-            <th>QRZ</th>
             <th>UDP</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="log-body">
-          <tr><td colspan="14">
+          <tr><td colspan="13">
             <div class="empty-log">
               <span class="empty-icon">📻</span>
               <div class="empty-msg">No contacts logged yet</div>
@@ -1315,10 +1299,8 @@ let lookupTimer = null;
 (function restoreQrzCreds() {
   const u = localStorage.getItem('w4ggj_qrz_user');
   const p = localStorage.getItem('w4ggj_qrz_pass');
-  const k = localStorage.getItem('w4ggj_qrz_key');
   if (u) $('qrz-user').value = u;
   if (p) $('qrz-pass').value = p;
-  if (k) $('qrz-api-key').value = k;
 })();
 
 function saveQrzCreds() {
@@ -1327,11 +1309,7 @@ function saveQrzCreds() {
   $('qrz-user').value = u;
   localStorage.setItem('w4ggj_qrz_user', u);
   localStorage.setItem('w4ggj_qrz_pass', p);
-  qrzSession = null;   // invalidate session when creds change
-}
-
-function saveQrzKey(v) {
-  localStorage.setItem('w4ggj_qrz_key', v.trim());
+  qrzSession = null;
 }
 
 function setQrzStatus(msg, cls) {
@@ -1362,7 +1340,6 @@ async function getQrzSession() {
     const keyMatch = txt.match(/<Key>([^<]+)<\/Key>/);
     if (keyMatch) {
       qrzSession = keyMatch[1];
-      // Show subscription level if present
       const subMatch = txt.match(/<SubExp>([^<]+)<\/SubExp>/);
       const sub = subMatch ? subMatch[1] : '';
       setQrzStatus('● Connected' + (sub ? ` (${sub})` : ''), 'ok');
@@ -1482,24 +1459,6 @@ async function lookupCallsign(call) {
     badge.className   = 'lookup-badge fail';
     badge.textContent = 'ERR';
   }
-}
-
-/* Logbook upload — uses API key directly, NOT the session key */
-async function logToQrz(entry) {
-  const apiKey = ($('qrz-api-key').value || '').trim();
-  if (!apiKey) return 'NO_API_KEY';
-
-  const grid = $('grid-input').value.trim();
-  const adif = buildAdifRecord(entry, grid);
-
-  try {
-    const url = `https://xmldata.qrz.com/xml/current/?action=INSERT&KEY=${encodeURIComponent(apiKey)}&ADIF=${encodeURIComponent(adif)}`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
-    const txt = await res.text();
-    if (txt.includes('<result>OK</result>') || txt.includes('REPLACE') || txt.includes('INSERT')) return 'OK';
-    const err = txt.match(/<Error>([^<]+)<\/Error>/);
-    return 'FAIL: ' + (err ? err[1] : 'Unknown');
-  } catch { return 'NETWORK_ERROR'; }
 }
 
 /* ══════════════════════════════════════════
@@ -1649,7 +1608,6 @@ async function addEntry() {
     theirGrid:  $('inp-their-grid').value.trim().toUpperCase(),
     notes:      $('inp-notes').value.trim(),
     programs:   collectPrograms(),
-    qrzStatus:  'pending',
     udpStatus:  'pending',
   };
 
@@ -1661,24 +1619,11 @@ async function addEntry() {
   toast(`Logged: ${call}`, 'ok');
   advanceTime();
 
-  // Fire both async — QRZ logbook upload + UDP bridge
-  const udpPromise = sendUdpLog(entry).then(r => {
+  // Send via UDP bridge to home server (which handles QRZ upload)
+  sendUdpLog(entry).then(r => {
     entry.udpStatus = (r === 'OK') ? 'ok' : (r === 'DISABLED' ? 'none' : 'fail');
     save(); renderTable();
   });
-
-  const qrzKey = $('qrz-api-key').value.trim();
-  if (qrzKey) {
-    logToQrz(entry).then(r => {
-      entry.qrzStatus = (r === 'OK') ? 'ok' : 'fail';
-      save(); renderTable();
-      if (r === 'OK') toast(`QRZ: ${call} uploaded ✓`, 'ok');
-      else toast(`QRZ upload failed: ${r}`, 'err');
-    });
-  } else {
-    entry.qrzStatus = 'none';
-    save(); renderTable();
-  }
 }
 
 function advanceTime() {
@@ -1694,16 +1639,6 @@ function deleteEntry(id) {
   log = log.filter(e => e.id !== id);
   save(); renderTable(); updateStats();
   toast('QSO deleted');
-}
-
-async function retryQrz(id) {
-  const entry = log.find(e => e.id === id);
-  if (!entry) return;
-  entry.qrzStatus = 'pending'; save(); renderTable();
-  const r = await logToQrz(entry);
-  entry.qrzStatus = (r === 'OK') ? 'ok' : 'fail';
-  save(); renderTable();
-  toast(r === 'OK' ? `QRZ: ${entry.call} ✓` : `QRZ retry failed: ${r}`, r === 'OK' ? 'ok' : 'err');
 }
 
 async function retryUdp(id) {
@@ -1754,7 +1689,7 @@ function renderTable() {
   const tbody = $('log-body');
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
+    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-log">
       <span class="empty-icon">📻</span>
       <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
       <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
@@ -1779,11 +1714,6 @@ function renderTable() {
       progCell = '<span style="color:var(--border2)">—</span>';
     }
 
-    const qrzCell = e.qrzStatus === 'ok'      ? '<span class="qc-ok">✓</span>'
-      : e.qrzStatus === 'fail'     ? `<span class="qc-fail" onclick="retryQrz(${e.id})" title="Retry">✕</span>`
-      : e.qrzStatus === 'pending'  ? '<span class="qc-pend">…</span>'
-      : '<span class="qc-none">—</span>';
-
     const udpCell = e.udpStatus === 'ok'   ? '<span class="uc-ok">✓</span>'
       : e.udpStatus === 'fail' ? `<span class="uc-fail" onclick="retryUdp(${e.id})" title="Retry UDP" style="cursor:pointer;text-decoration:underline dashed">✕</span>`
       : '<span class="uc-off">—</span>';
@@ -1800,7 +1730,6 @@ function renderTable() {
       <td>${progCell}</td>
       <td class="td-name">${e.name||'—'}</td>
       <td class="td-notes" title="${(e.notes||'').replace(/"/g,'&quot;')}">${e.notes||'—'}</td>
-      <td>${qrzCell}</td>
       <td>${udpCell}</td>
       <td><button class="btn btn-danger" onclick="deleteEntry(${e.id})">DEL</button></td>
     </tr>`;
