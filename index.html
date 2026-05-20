@@ -860,20 +860,42 @@ footer {
 
         <!-- QRZ -->
         <div style="margin-top:14px;">
-          <div class="sec-label blue" style="margin-top:0">QRZ Logbook</div>
-          <div class="qrz-row">
-            <input type="password" id="qrz-api-key" placeholder="QRZ API key…" oninput="saveQrzKey(this.value)">
-            <button class="btn btn-outline" onclick="testQrz()" style="padding:7px 10px;font-size:0.62rem;">TEST</button>
+          <div class="sec-label blue" style="margin-top:0">QRZ Integration</div>
+
+          <!-- Callsign lookup: username + password -->
+          <div style="margin-bottom:6px;">
+            <label style="display:block;margin-bottom:4px;">Callsign Lookup — QRZ Username &amp; Password</label>
+            <div class="qrz-row" style="margin-bottom:6px;">
+              <input type="text" id="qrz-user" placeholder="Your callsign (W4GGJ)"
+                autocorrect="off" autocapitalize="characters" spellcheck="false"
+                oninput="saveQrzCreds()" style="text-transform:uppercase">
+            </div>
+            <div class="qrz-row">
+              <input type="password" id="qrz-pass" placeholder="QRZ password"
+                oninput="saveQrzCreds()">
+              <button class="btn btn-outline" onclick="testQrz()" style="padding:7px 10px;font-size:0.62rem;">TEST</button>
+            </div>
           </div>
+
+          <!-- Status + help -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
             <span class="qrz-pill idle" id="qrz-status">—</span>
-            <button class="qrz-help-toggle" onclick="toggleQrzHelp()">How to get key ▾</button>
+            <button class="qrz-help-toggle" onclick="toggleQrzHelp()">Setup guide ▾</button>
           </div>
           <div class="qrz-help" id="qrz-help">
+            <strong>Callsign lookup</strong> uses your QRZ username &amp; password.<br>
+            Requires a <span class="warn">QRZ XML Data subscription</span> for full name/grid/QTH lookup.<br><br>
+            <strong>Logbook upload</strong> uses your QRZ API Key below.<br>
             1. Log in to <strong>qrz.com</strong> → <strong>Logbook</strong> → <strong>Settings</strong><br>
             2. Under <strong>API Access</strong>, copy your <strong>API Key</strong><br>
-            3. Paste above and click TEST — session fetched automatically<br>
-            4. Requires <span class="warn">XML Logbook subscription</span> (paid) for full lookup &amp; logging
+            3. Requires a <span class="warn">QRZ Logbook subscription</span> (separate from XML)
+          </div>
+
+          <!-- Logbook upload: API key -->
+          <div style="margin-top:10px;">
+            <label style="display:block;margin-bottom:4px;">Logbook Upload — QRZ API Key</label>
+            <input type="password" id="qrz-api-key" placeholder="QRZ Logbook API key…"
+              oninput="saveQrzKey(this.value)" style="width:100%">
           </div>
         </div>
 
@@ -1279,14 +1301,38 @@ function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/
 
 /* ══════════════════════════════════════════
    QRZ
+   ─────────────────────────────────────────
+   Two separate auth paths:
+   1. Callsign LOOKUP  → username + password → session key
+      endpoint: ?username=W4GGJ&password=X&agent=W4GGJ-Logger
+   2. Logbook UPLOAD   → API key directly
+      endpoint: ?action=INSERT&KEY=APIKEY&ADIF=...
 ══════════════════════════════════════════ */
 let qrzSession = null;
 let lookupTimer = null;
 
-const savedQrzKey = localStorage.getItem('w4ggj_qrz_key');
-if (savedQrzKey) $('qrz-api-key').value = savedQrzKey;
+// Restore saved credentials on load
+(function restoreQrzCreds() {
+  const u = localStorage.getItem('w4ggj_qrz_user');
+  const p = localStorage.getItem('w4ggj_qrz_pass');
+  const k = localStorage.getItem('w4ggj_qrz_key');
+  if (u) $('qrz-user').value = u;
+  if (p) $('qrz-pass').value = p;
+  if (k) $('qrz-api-key').value = k;
+})();
 
-function saveQrzKey(v) { localStorage.setItem('w4ggj_qrz_key', v.trim()); qrzSession = null; }
+function saveQrzCreds() {
+  const u = ($('qrz-user').value || '').trim().toUpperCase();
+  const p = ($('qrz-pass').value || '').trim();
+  $('qrz-user').value = u;
+  localStorage.setItem('w4ggj_qrz_user', u);
+  localStorage.setItem('w4ggj_qrz_pass', p);
+  qrzSession = null;   // invalidate session when creds change
+}
+
+function saveQrzKey(v) {
+  localStorage.setItem('w4ggj_qrz_key', v.trim());
+}
 
 function setQrzStatus(msg, cls) {
   const el = $('qrz-status');
@@ -1294,24 +1340,47 @@ function setQrzStatus(msg, cls) {
   el.className = 'qrz-pill ' + (cls || 'idle');
 }
 
+/* Get a session key using username + password.
+   QRZ XML endpoint: ?username=CALL&password=PASS&agent=APPNAME */
 async function getQrzSession() {
   if (qrzSession) return qrzSession;
-  const key = $('qrz-api-key').value.trim();
-  if (!key) { setQrzStatus('No API key', 'err'); return null; }
+
+  const user = ($('qrz-user').value || '').trim();
+  const pass = ($('qrz-pass').value || '').trim();
+
+  if (!user || !pass) {
+    setQrzStatus('Enter callsign + password', 'err');
+    return null;
+  }
+
   setQrzStatus('Connecting…', 'pending');
   try {
-    const url = `https://xmldata.qrz.com/xml/current/?api=${encodeURIComponent(key)}`;
+    const url = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&agent=W4GGJ-QSOLogger`;
     const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
     const txt = await res.text();
-    const m = txt.match(/<Key>([^<]+)<\/Key>/);
-    if (m) { qrzSession = m[1]; setQrzStatus('● Connected', 'ok'); return qrzSession; }
-    const e = txt.match(/<Error>([^<]+)<\/Error>/);
-    setQrzStatus('✕ ' + (e ? e[1] : 'Auth failed'), 'err');
+
+    const keyMatch = txt.match(/<Key>([^<]+)<\/Key>/);
+    if (keyMatch) {
+      qrzSession = keyMatch[1];
+      // Show subscription level if present
+      const subMatch = txt.match(/<SubExp>([^<]+)<\/SubExp>/);
+      const sub = subMatch ? subMatch[1] : '';
+      setQrzStatus('● Connected' + (sub ? ` (${sub})` : ''), 'ok');
+      return qrzSession;
+    }
+
+    const errMatch = txt.match(/<Error>([^<]+)<\/Error>/);
+    const errMsg = errMatch ? errMatch[1] : 'Auth failed';
+    setQrzStatus('✕ ' + errMsg, 'err');
     return null;
-  } catch { setQrzStatus('✕ Network error', 'err'); return null; }
+  } catch (e) {
+    setQrzStatus('✕ Network error', 'err');
+    return null;
+  }
 }
 
 async function testQrz() { qrzSession = null; await getQrzSession(); }
+
 function toggleQrzHelp() {
   const h = $('qrz-help');
   h.style.display = h.style.display === 'none' ? 'block' : 'none';
@@ -1346,8 +1415,15 @@ function clearQrzFields() {
 
 async function lookupCallsign(call) {
   const badge = $('lookup-badge');
-  const key = $('qrz-api-key').value.trim();
-  if (!key) { badge.className = 'lookup-badge nokey'; badge.textContent = 'NO KEY'; return; }
+  const user  = ($('qrz-user').value || '').trim();
+  const pass  = ($('qrz-pass').value || '').trim();
+
+  if (!user || !pass) {
+    badge.className  = 'lookup-badge nokey';
+    badge.textContent = 'NO CREDS';
+    badge.title = 'Enter QRZ username + password in Settings';
+    return;
+  }
 
   const session = await getQrzSession();
   if (!session) { badge.className = 'lookup-badge fail'; badge.textContent = 'ERR'; return; }
@@ -1358,7 +1434,7 @@ async function lookupCallsign(call) {
     const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
     const txt = await res.text();
 
-    // Check for session expiry
+    // Session expired — re-auth once then retry
     if (txt.includes('Session Timeout') || txt.includes('Invalid session')) {
       qrzSession = null;
       const s2 = await getQrzSession();
@@ -1367,7 +1443,10 @@ async function lookupCallsign(call) {
     }
 
     // Parse XML fields
-    const get = tag => { const m = txt.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`,'i')); return m ? m[1].trim() : ''; };
+    const get = tag => {
+      const m = txt.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`, 'i'));
+      return m ? m[1].trim() : '';
+    };
 
     const fname   = get('fname');
     const lname   = get('name');
@@ -1386,46 +1465,39 @@ async function lookupCallsign(call) {
         $('inp-name').classList.add('qrz-filled');
       }
       if (grid) {
-        $('inp-their-grid').value = grid.toUpperCase().slice(0,6);
+        $('inp-their-grid').value = grid.toUpperCase().slice(0, 6);
         $('inp-their-grid').classList.add('qrz-filled');
       }
-
-      // Build short status label
       const loc = [city, state, country].filter(Boolean).join(', ');
-      badge.className = 'lookup-badge ok';
-      badge.textContent = dxcc ? dxcc : '✓';
-      badge.title = `${fullName}${loc ? ' — ' + loc : ''}`;
-
-      // Pre-populate notes with QTH if empty
-      if (!$('inp-notes').value.trim() && loc) {
-        $('inp-notes').value = loc;
-      }
+      badge.className   = 'lookup-badge ok';
+      badge.textContent = dxcc || '✓';
+      badge.title       = `${fullName}${loc ? ' — ' + loc : ''}`;
+      if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
     } else {
-      badge.className = 'lookup-badge fail';
+      badge.className   = 'lookup-badge fail';
       badge.textContent = 'N/F';
-      badge.title = 'Not found in QRZ';
+      badge.title       = 'Not found in QRZ';
     }
   } catch {
-    badge.className = 'lookup-badge fail';
+    badge.className   = 'lookup-badge fail';
     badge.textContent = 'ERR';
   }
 }
 
+/* Logbook upload — uses API key directly, NOT the session key */
 async function logToQrz(entry) {
-  const session = await getQrzSession();
-  if (!session) return 'NO_SESSION';
-  const dateStr = entry.date.replace(/-/g,'');
-  const timeStr = entry.time.replace(':','') + '00';
-  const grid = $('grid-input').value.trim();
+  const apiKey = ($('qrz-api-key').value || '').trim();
+  if (!apiKey) return 'NO_API_KEY';
 
-  let adif = buildAdifRecord(entry, grid);
+  const grid = $('grid-input').value.trim();
+  const adif = buildAdifRecord(entry, grid);
+
   try {
-    const url = `https://xmldata.qrz.com/xml/current/?action=INSERT&KEY=${encodeURIComponent(session)}&ADIF=${encodeURIComponent(adif)}`;
+    const url = `https://xmldata.qrz.com/xml/current/?action=INSERT&KEY=${encodeURIComponent(apiKey)}&ADIF=${encodeURIComponent(adif)}`;
     const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
     const txt = await res.text();
     if (txt.includes('<result>OK</result>') || txt.includes('REPLACE') || txt.includes('INSERT')) return 'OK';
     const err = txt.match(/<Error>([^<]+)<\/Error>/);
-    if (err && err[1].includes('session')) { qrzSession = null; return 'SESSION_EXPIRED'; }
     return 'FAIL: ' + (err ? err[1] : 'Unknown');
   } catch { return 'NETWORK_ERROR'; }
 }
