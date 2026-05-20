@@ -1400,13 +1400,9 @@ function closePotaDropdown(e) {
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 /* ══════════════════════════════════════════
-   QRZ
-   ─────────────────────────────────────────
-   Two separate auth paths:
-   1. Callsign LOOKUP  → username + password → session key
-      endpoint: ?username=W4GGJ&password=X&agent=W4GGJ-Logger
-   2. Logbook UPLOAD   → API key directly
-      endpoint: ?action=INSERT&KEY=APIKEY&ADIF=...
+   QRZ — callsign lookup via username + password
+   Tries three CORS proxies in sequence because
+   QRZ actively blocks some public proxies.
 ══════════════════════════════════════════ */
 let qrzSession = null;
 let lookupTimer = null;
@@ -1434,8 +1430,31 @@ function setQrzStatus(msg, cls) {
   el.className = 'qrz-pill ' + (cls || 'idle');
 }
 
-/* Get a session key using username + password.
-   QRZ XML endpoint: ?username=CALL&password=PASS&agent=APPNAME */
+/* Try multiple CORS proxies in sequence */
+const CORS_PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://proxy.cors.sh/${u}`,
+];
+
+async function qrzFetch(qrzUrl) {
+  let lastErr = '';
+  for (const makeProxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(makeProxy(qrzUrl), { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) { lastErr = `HTTP ${res.status}`; continue; }
+      const txt = await res.text();
+      if (txt.trim().startsWith('<!') || txt.trim().startsWith('<html')) {
+        lastErr = 'proxy returned HTML'; continue;
+      }
+      return txt;
+    } catch (e) {
+      lastErr = e.message;
+    }
+  }
+  throw new Error('All proxies failed — ' + lastErr);
+}
+
 async function getQrzSession() {
   if (qrzSession) return qrzSession;
 
@@ -1447,27 +1466,25 @@ async function getQrzSession() {
     return null;
   }
 
-  setQrzStatus('Connecting…', 'pending');
+  setQrzStatus('Connecting\u2026', 'pending');
   try {
-    const url = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&agent=W4GGJ-QSOLogger`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
-    const txt = await res.text();
+    const qrzUrl = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(user)}&password=${encodeURIComponent(pass)}&agent=W4GGJ-QSOLogger`;
+    const txt    = await qrzFetch(qrzUrl);
 
     const keyMatch = txt.match(/<Key>([^<]+)<\/Key>/);
     if (keyMatch) {
       qrzSession = keyMatch[1];
-      const subMatch = txt.match(/<SubExp>([^<]+)<\/SubExp>/);
-      const sub = subMatch ? subMatch[1] : '';
-      setQrzStatus('● Connected' + (sub ? ` (${sub})` : ''), 'ok');
+      const sub = (txt.match(/<SubExp>([^<]+)<\/SubExp>/) || [])[1] || '';
+      setQrzStatus('\u25cf Connected' + (sub ? ` (${sub})` : ''), 'ok');
       return qrzSession;
     }
 
-    const errMatch = txt.match(/<Error>([^<]+)<\/Error>/);
-    const errMsg = errMatch ? errMatch[1] : 'Auth failed';
-    setQrzStatus('✕ ' + errMsg, 'err');
+    const errMsg = (txt.match(/<Error>([^<]+)<\/Error>/) || [])[1] || 'No session key returned';
+    console.warn('[QRZ auth]', txt.slice(0, 500));
+    setQrzStatus('\u2715 ' + errMsg, 'err');
     return null;
   } catch (e) {
-    setQrzStatus('✕ Network error', 'err');
+    setQrzStatus('\u2715 ' + e.message, 'err');
     return null;
   }
 }
@@ -1479,7 +1496,6 @@ function toggleQrzHelp() {
   h.style.display = h.style.display === 'none' ? 'block' : 'none';
 }
 
-/* ─── Callsign input → debounced QRZ lookup ─── */
 function onCallInput(val) {
   const v = val.toUpperCase().replace(/[^A-Z0-9/]/g, '');
   $('inp-call').value = v;
@@ -1487,7 +1503,7 @@ function onCallInput(val) {
   clearTimeout(lookupTimer);
   const badge = $('lookup-badge');
   if (!v || v.length < 3) { badge.className = 'lookup-badge idle'; badge.textContent = 'QRZ'; return; }
-  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
   lookupTimer = setTimeout(() => lookupCallsign(v), 1200);
 }
 
@@ -1512,22 +1528,20 @@ async function lookupCallsign(call) {
   const pass  = ($('qrz-pass').value || '').trim();
 
   if (!user || !pass) {
-    badge.className  = 'lookup-badge nokey';
+    badge.className   = 'lookup-badge nokey';
     badge.textContent = 'NO CREDS';
-    badge.title = 'Enter QRZ username + password in Settings';
+    badge.title       = 'Enter QRZ username + password in Settings';
     return;
   }
 
   const session = await getQrzSession();
   if (!session) { badge.className = 'lookup-badge fail'; badge.textContent = 'ERR'; return; }
 
-  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
   try {
-    const url = `https://xmldata.qrz.com/xml/current/?s=${encodeURIComponent(session)}&callsign=${encodeURIComponent(call)}`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
-    const txt = await res.text();
+    const qrzUrl = `https://xmldata.qrz.com/xml/current/?s=${encodeURIComponent(session)}&callsign=${encodeURIComponent(call)}`;
+    const txt    = await qrzFetch(qrzUrl);
 
-    // Session expired — re-auth once then retry
     if (txt.includes('Session Timeout') || txt.includes('Invalid session')) {
       qrzSession = null;
       const s2 = await getQrzSession();
@@ -1535,45 +1549,35 @@ async function lookupCallsign(call) {
       badge.className = 'lookup-badge fail'; badge.textContent = 'SESSION'; return;
     }
 
-    // Parse XML fields
     const get = tag => {
-      const m = txt.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`, 'i'));
+      const m = txt.match(new RegExp(`<${tag}>([^<]*)</${tag}>`, 'i'));
       return m ? m[1].trim() : '';
     };
 
-    const fname   = get('fname');
-    const lname   = get('name');
-    const city    = get('addr2');
-    const state   = get('state');
-    const country = get('country');
-    const grid    = get('grid');
-    const dxcc    = get('dxcc');
-
+    const fname = get('fname'), lname = get('name'), city  = get('addr2'),
+          state = get('state'), country = get('country'), grid = get('grid'),
+          dxcc  = get('dxcc');
     const hasData = fname || lname || grid;
 
     if (hasData) {
       const fullName = [fname, lname].filter(Boolean).join(' ');
-      if (fullName) {
-        $('inp-name').value = fullName;
-        $('inp-name').classList.add('qrz-filled');
-      }
-      if (grid) {
-        $('inp-their-grid').value = grid.toUpperCase().slice(0, 6);
-        $('inp-their-grid').classList.add('qrz-filled');
-      }
-      const loc = [city, state, country].filter(Boolean).join(', ');
+      if (fullName) { $('inp-name').value = fullName; $('inp-name').classList.add('qrz-filled'); }
+      if (grid)     { $('inp-their-grid').value = grid.toUpperCase().slice(0, 6); $('inp-their-grid').classList.add('qrz-filled'); }
+      const loc         = [city, state, country].filter(Boolean).join(', ');
       badge.className   = 'lookup-badge ok';
-      badge.textContent = dxcc || '✓';
-      badge.title       = `${fullName}${loc ? ' — ' + loc : ''}`;
+      badge.textContent = dxcc || '\u2713';
+      badge.title       = `${fullName}${loc ? ' \u2014 ' + loc : ''}`;
       if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
     } else {
+      const errMsg      = (txt.match(/<Error>([^<]+)<\/Error>/) || [])[1] || 'Not found';
       badge.className   = 'lookup-badge fail';
       badge.textContent = 'N/F';
-      badge.title       = 'Not found in QRZ';
+      badge.title       = errMsg;
     }
-  } catch {
+  } catch (e) {
     badge.className   = 'lookup-badge fail';
     badge.textContent = 'ERR';
+    badge.title       = e.message;
   }
 }
 
