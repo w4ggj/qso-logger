@@ -1170,7 +1170,7 @@ footer {
        .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
    Default PIN: 7300  (73 — the ham radio sign-off)
 ══════════════════════════════════════════ */
-const PIN_HASH = 'a6c4e3b6f6a78fa89b61bc42e40d5e9fccde4fc8f3b1e54e1d0c9f7a5b2e8c1'; // SHA-256 of '7300'
+const PIN_HASH = '761859531bb883cc8145344d7062114944528b7c29eef9d97b81758dc6b5e300'; // SHA-256 of '7300'
 const SESSION_KEY = 'w4ggj_pin_ok';
 
 let pinBuffer = '';
