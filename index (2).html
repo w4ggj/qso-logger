@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>W4GGJ — QSO Logger</title>
+<link rel="manifest" href="manifest.json">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════
+   TOKENS
+══════════════════════════════════════════ */
+:root {
+  --amber:       #ffb000;
+  --amber-dim:   #b07800;
+  --amber-glow:  rgba(255,176,0,0.20);
+  --amber-soft:  rgba(255,176,0,0.07);
+  --green:       #00e04a;
+  --green-dim:   #006b22;
+  --green-glow:  rgba(0,224,74,0.15);
+  --red:         #ff4444;
+  --red-soft:    rgba(255,68,68,0.08);
+  --blue:        #40c4ff;
+  --blue-soft:   rgba(64,196,255,0.08);
+  --violet:      #c780ff;
+
+  --bg:    #090b0d;
+  --bg2:   #0e1218;
+  --bg3:   #141a22;
+  --bg4:   #1a2230;
+  --bg5:   #202c3c;
+
+  --border:  #1c2838;
+  --border2: #263548;
+  --border3: #304060;
+
+  --muted:   #304050;
+  --dim:     #506070;
+  --text:    #c0d0e0;
+  --heading: #ddeeff;
+
+  --r: 3px;
+  --mono: 'Share Tech Mono', monospace;
+  --ui:   'Rajdhani', sans-serif;
+  --head: 'Orbitron', sans-serif;
+}
+
+/* ══════════════════════════════════════════
+   BASE
+══════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Fine grain overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ══════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════ */
+.app { display: grid; grid-template-rows: 60px 1fr 44px; min-height: 100vh; }
+
+.main {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  overflow: hidden;
+}
+
+@media (max-width: 960px) { .main { grid-template-columns: 1fr; } }
+
+/* ══════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════ */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+  position: sticky; top: 0; z-index: 200;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.5);
+}
+
+.h-left { display: flex; align-items: center; gap: 14px; }
+
+.callsign {
+  font-family: var(--head);
+  font-size: 1.45rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+  text-shadow: 0 0 20px var(--amber-glow);
+}
+
+.h-badge {
+  font-family: var(--ui);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border2);
+  padding: 2px 8px;
+  border-radius: var(--r);
+}
+
+.h-right { display: flex; align-items: center; gap: 20px; }
+
+.h-meta {
+  font-size: 0.62rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  line-height: 1.9;
+  text-align: right;
+}
+.h-meta span { color: var(--dim); }
+
+.clock-wrap { text-align: right; line-height: 1.3; }
+#clock-utc {
+  font-family: var(--head);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--amber);
+  letter-spacing: 0.1em;
+}
+#clock-lcl { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.06em; }
+
+@media (max-width: 600px) {
+  .h-meta { display: none; }
+  .callsign { font-size: 1.1rem; }
+}
+
+/* ══════════════════════════════════════════
+   LEFT PANEL
+══════════════════════════════════════════ */
+.panel-l {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: calc(100vh - 60px - 44px);
+  position: sticky;
+  top: 60px;
+}
+
+.panel-l::-webkit-scrollbar { width: 3px; }
+.panel-l::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.panel-l-inner { padding: 18px; }
+
+/* ══════════════════════════════════════════
+   RIGHT PANEL
+══════════════════════════════════════════ */
+.panel-r {
+  padding: 18px;
+  overflow-y: auto;
+  height: calc(100vh - 60px - 44px);
+}
+
+.panel-r::-webkit-scrollbar { width: 4px; }
+.panel-r::-webkit-scrollbar-thumb { background: var(--border2); }
+
+@media (max-width: 960px) {
+  .panel-l, .panel-r { height: auto; position: static; overflow: visible; }
+}
+
+/* ══════════════════════════════════════════
+   SECTION LABELS
+══════════════════════════════════════════ */
+.sec-label {
+  font-family: var(--ui);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sec-label::before {
+  content: '';
+  width: 2px; height: 11px;
+  background: var(--amber);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.sec-label.green::before  { background: var(--green); }
+.sec-label.blue::before   { background: var(--blue); }
+.sec-label.violet::before { background: var(--violet); }
+
+/* ══════════════════════════════════════════
+   FORM ELEMENTS
+══════════════════════════════════════════ */
+.row2  { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.row3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.row1  { margin-bottom: 10px; }
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+label {
+  font-family: var(--ui);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+input, select, textarea {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  padding: 7px 10px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  letter-spacing: 0.04em;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--amber-dim);
+  background: var(--bg4);
+  box-shadow: 0 0 0 2px var(--amber-soft);
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23304050'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  padding-right: 26px;
+  cursor: pointer;
+}
+
+select option { background: var(--bg3); }
+textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
+
+/* Callsign input — starred */
+.call-wrap { position: relative; }
+#inp-call {
+  color: var(--amber);
+  font-size: 1.05rem;
+  font-weight: bold;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding-right: 80px;
+}
+#inp-call:focus { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber-glow); }
+
+.lookup-badge {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--ui);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 2px;
+  pointer-events: none;
+  transition: all 0.2s;
+}
+
+.lookup-badge.idle    { color: var(--muted); }
+.lookup-badge.busy    { color: var(--amber); background: var(--amber-soft); animation: pulse-badge 1s ease-in-out infinite; }
+.lookup-badge.ok      { color: var(--green); background: var(--green-glow); }
+.lookup-badge.fail    { color: var(--red);   background: var(--red-soft); }
+.lookup-badge.nokey   { color: var(--muted); }
+
+@keyframes pulse-badge { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+/* Populated-from-QRZ fields get a subtle tint */
+.qrz-filled {
+  border-color: rgba(0,224,74,0.25) !important;
+  background: rgba(0,224,74,0.03) !important;
+}
+
+/* Band select */
+#inp-band { color: var(--blue); }
+
+/* ══════════════════════════════════════════
+   PROGRAMS SECTION
+══════════════════════════════════════════ */
+.prog-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.prog-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--dim);
+  font-family: var(--ui);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.prog-btn:hover { border-color: var(--border3); color: var(--text); }
+.prog-btn.active { background: var(--amber-soft); border-color: var(--amber-dim); color: var(--amber); }
+
+/* Each active program's reference row */
+.prog-ref-block {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-left: 2px solid var(--amber-dim);
+}
+
+.prog-ref-header {
+  font-family: var(--ui);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--amber-dim);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prog-ref-header .prog-hint {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+
+.prog-ref-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.prog-ref-row.solo { grid-template-columns: 1fr; }
+
+.prog-ref-row select { font-size: 0.75rem; padding: 6px 26px 6px 8px; }
+.prog-ref-row input  { font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* POTA search dropdown */
+.pota-wrap { position: relative; }
+
+#pota-dd {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0; right: 0;
+  background: var(--bg4);
+  border: 1px solid var(--amber-dim);
+  border-radius: var(--r);
+  z-index: 300;
+  max-height: 190px;
+  overflow-y: auto;
+  display: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+}
+
+#pota-dd.open { display: block; }
+#pota-dd::-webkit-scrollbar { width: 3px; }
+#pota-dd::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.pota-opt {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.pota-opt:hover { background: var(--amber-soft); }
+.pota-opt:last-child { border-bottom: none; }
+.pota-ref  { color: var(--amber); font-size: 0.76rem; font-weight: bold; letter-spacing: 0.08em; }
+.pota-name { color: var(--text); font-size: 0.76rem; }
+.pota-loc  { color: var(--muted); font-size: 0.68rem; }
+
+/* ══════════════════════════════════════════
+   BUTTONS
+══════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px;
+  font-family: var(--ui);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: var(--r);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+  background: transparent;
+}
+
+.btn-primary {
+  background: var(--amber);
+  color: #0a0c0e;
+  border-color: var(--amber);
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  padding: 11px 20px;
+}
+.btn-primary:hover { background: #ffc030; box-shadow: 0 0 18px var(--amber-glow); }
+
+.btn-outline { color: var(--dim); border-color: var(--border2); }
+.btn-outline:hover { color: var(--text); border-color: var(--border3); background: var(--bg3); }
+
+.btn-ghost { color: var(--muted); padding: 6px 10px; font-size: 0.62rem; }
+.btn-ghost:hover { color: var(--dim); }
+
+.btn-danger { color: var(--red); border-color: rgba(255,68,68,0.15); font-size: 0.6rem; padding: 4px 8px; }
+.btn-danger:hover { background: var(--red-soft); border-color: rgba(255,68,68,0.4); }
+
+.btn-full { width: 100%; margin-top: 14px; }
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+/* ══════════════════════════════════════════
+   QRZ PANEL
+══════════════════════════════════════════ */
+.qrz-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.qrz-row input { flex: 1; }
+
+.qrz-pill {
+  font-family: var(--ui);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 4px 9px;
+  border-radius: 30px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.qrz-pill.idle    { color: var(--muted); border-color: var(--border); }
+.qrz-pill.ok      { color: var(--green); background: var(--green-glow); border-color: var(--green-dim); }
+.qrz-pill.err     { color: var(--red);   background: var(--red-soft);   border-color: rgba(255,68,68,0.3); }
+.qrz-pill.pending { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-dim); }
+
+.qrz-help-toggle {
+  background: none; border: none;
+  color: var(--muted); font-family: var(--ui); font-size: 0.6rem;
+  font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; padding: 0;
+  text-decoration: underline dashed; text-underline-offset: 2px;
+}
+.qrz-help-toggle:hover { color: var(--dim); }
+
+.qrz-help {
+  display: none;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 14px; margin-top: 8px;
+  font-size: 0.68rem; color: var(--muted); line-height: 1.9; letter-spacing: 0.03em;
+}
+.qrz-help strong { color: var(--dim); }
+.qrz-help .warn  { color: var(--amber-dim); }
+
+/* ══════════════════════════════════════════
+   UDP SECTION
+══════════════════════════════════════════ */
+.udp-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.udp-row input { flex: 1; font-size: 0.78rem; }
+
+.udp-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--ui); font-size: 0.62rem;
+  font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.udp-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.udp-dot.idle    { background: var(--muted); }
+.udp-dot.ok      { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.udp-dot.err     { background: var(--red); }
+.udp-dot.busy    { background: var(--amber); animation: blink 0.6s step-end infinite; }
+.udp-dot.off     { background: var(--border2); }
+
+.udp-help {
+  font-size: 0.65rem; color: var(--muted); line-height: 1.8;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px; margin-top: 6px;
+  display: none;
+}
+.udp-help code {
+  font-family: var(--mono); color: var(--dim);
+  background: var(--bg4); padding: 1px 5px; border-radius: 2px;
+}
+
+/* ══════════════════════════════════════════
+   GRID ROW
+══════════════════════════════════════════ */
+.grid-row {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 12px; margin-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.grid-row label { flex-shrink: 0; margin-bottom: 0; }
+.grid-row input { width: 86px; text-transform: uppercase; padding: 5px 8px; font-size: 0.8rem; }
+.gps-btn {
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--muted);
+  font-family: var(--ui); font-size: 0.6rem;
+  font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 5px 10px; cursor: pointer; transition: all 0.15s;
+}
+.gps-btn:hover { color: var(--text); border-color: var(--border3); }
+
+/* ══════════════════════════════════════════
+   SETTINGS ACCORDION
+══════════════════════════════════════════ */
+.accordion-head {
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; padding: 10px 0;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  font-family: var(--ui); font-size: 0.6rem;
+  font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--muted); user-select: none;
+}
+.accordion-head:hover { color: var(--dim); }
+.accordion-head .chevron { transition: transform 0.2s; }
+.accordion-head.open .chevron { transform: rotate(180deg); }
+.accordion-body { display: none; padding-bottom: 4px; }
+.accordion-body.open { display: block; }
+
+/* ══════════════════════════════════════════
+   STATS STRIP
+══════════════════════════════════════════ */
+.stats-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 10px 12px; text-align: center;
+}
+.stat-val {
+  font-family: var(--head); font-size: 1.25rem;
+  font-weight: 700; color: var(--amber);
+  letter-spacing: 0.04em; display: block; line-height: 1;
+}
+.stat-lbl {
+  font-family: var(--ui); font-size: 0.56rem;
+  font-weight: 700; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--muted);
+  display: block; margin-top: 4px;
+}
+@media (max-width: 600px) { .stats-strip { grid-template-columns: repeat(2,1fr); } }
+
+/* ══════════════════════════════════════════
+   TOOLBAR
+══════════════════════════════════════════ */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px; flex-wrap: wrap;
+}
+.search-wrap { position: relative; flex: 1; min-width: 160px; }
+.search-wrap::before {
+  content: '⌕';
+  position: absolute; left: 10px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted); font-size: 0.88rem; pointer-events: none;
+}
+.search-wrap input { padding-left: 30px; font-size: 0.78rem; }
+
+/* ══════════════════════════════════════════
+   LOG TABLE
+══════════════════════════════════════════ */
+.table-wrap {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r); overflow-x: auto;
+}
+.table-wrap::-webkit-scrollbar { height: 3px; }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--border2); }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+
+thead tr { background: var(--bg3); border-bottom: 1px solid var(--border2); }
+th {
+  font-family: var(--ui); font-size: 0.58rem;
+  font-weight: 700; letter-spacing: 0.2em;
+  color: var(--muted); text-transform: uppercase;
+  padding: 9px 10px; text-align: left; white-space: nowrap;
+}
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(255,176,0,0.02); }
+
+.td-n    { color: var(--muted); font-size: 0.68rem; text-align: right; width: 28px; }
+.td-call { color: var(--amber); font-weight: bold; font-size: 0.88rem; letter-spacing: 0.08em; white-space: nowrap; }
+.td-date { color: var(--dim); font-size: 0.72rem; white-space: nowrap; }
+.td-time { color: var(--muted); font-size: 0.68rem; }
+.td-freq { color: var(--blue); white-space: nowrap; }
+.td-band { font-family: var(--ui); font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; color: var(--blue); }
+.td-mode { font-family: var(--ui); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em; color: var(--green); }
+.td-rst  { color: var(--text); font-size: 0.75rem; white-space: nowrap; }
+.td-name { color: var(--dim); font-size: 0.72rem; }
+.td-notes { color: var(--muted); font-size: 0.72rem; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Program badges in table */
+.prog-badges { display: flex; flex-wrap: wrap; gap: 3px; }
+.pb {
+  font-family: var(--ui); font-size: 0.55rem;
+  font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 2px; white-space: nowrap;
+}
+.pb-act { background: var(--amber); color: #0a0c0e; }
+.pb-hnt { background: var(--blue);  color: #0a0c0e; }
+.pb-ref { font-family: var(--mono); color: var(--dim); font-size: 0.62rem; letter-spacing: 0.04em; display: block; margin-top: 2px; }
+
+/* QRZ cell */
+.qc-ok  { color: var(--green);  font-size: 0.65rem; }
+.qc-fail { color: var(--red); font-size: 0.65rem; cursor: pointer; text-decoration: underline dashed; }
+.qc-pend { color: var(--amber); font-size: 0.65rem; }
+.qc-none { color: var(--border2); font-size: 0.65rem; }
+
+/* UDP cell */
+.uc-ok   { color: var(--green); font-size: 0.65rem; }
+.uc-fail { color: var(--red);   font-size: 0.65rem; }
+.uc-off  { color: var(--border2); font-size: 0.65rem; }
+
+/* Empty state */
+.empty-log {
+  text-align: center; padding: 50px 20px; color: var(--muted);
+}
+.empty-icon { font-size: 2rem; opacity: 0.25; display: block; margin-bottom: 12px; }
+.empty-msg  { font-family: var(--ui); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; }
+.empty-sub  { font-size: 0.68rem; letter-spacing: 0.05em; }
+
+.blink { animation: blink 1.1s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ══════════════════════════════════════════
+   FOOTER
+══════════════════════════════════════════ */
+footer {
+  background: var(--bg2); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; gap: 16px; flex-wrap: wrap;
+}
+.ft-call { font-family: var(--head); font-size: 0.65rem; font-weight: 700; letter-spacing: 0.15em; color: var(--amber-dim); }
+.ft-info { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.08em; }
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+#toast {
+  position: fixed; bottom: 56px; right: 20px;
+  background: var(--bg4); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--mono); font-size: 0.76rem;
+  padding: 10px 16px; letter-spacing: 0.04em;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  opacity: 0; transform: translateY(6px) scale(0.98);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none; z-index: 9000; max-width: 300px;
+}
+#toast.show { opacity: 1; transform: translateY(0) scale(1); }
+#toast.tok  { border-color: var(--green-dim); color: var(--green); }
+#toast.twrn { border-color: var(--amber-dim); color: var(--amber); }
+#toast.terr { border-color: rgba(255,68,68,0.4); color: var(--red); }
+
+/* ══════════════════════════════════════════
+   MOBILE PANEL TOGGLE
+══════════════════════════════════════════ */
+.mob-toggle {
+  display: none; width: 100%;
+  background: var(--bg3); border: none; border-bottom: 1px solid var(--border);
+  color: var(--dim); font-family: var(--ui); font-size: 0.68rem;
+  font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  padding: 10px 18px; cursor: pointer; text-align: left;
+}
+.mob-toggle:hover { color: var(--text); }
+
+@media (max-width: 960px) {
+  .mob-toggle { display: block; }
+  .panel-l-inner.mob-hidden { display: none; }
+  th:nth-child(n+7):not(:last-child):not(:nth-last-child(1)) { display: none; }
+  td:nth-child(n+7):not(:last-child):not(:nth-last-child(1)) { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ═════════════ HEADER ═════════════ -->
+<header>
+  <div class="h-left">
+    <div class="callsign">W4GGJ</div>
+    <div class="h-badge">Amateur Radio Log</div>
+  </div>
+  <div class="h-right">
+    <div class="h-meta">
+      QTH: <span>TAMPA BAY, FL</span> &nbsp;|&nbsp;
+      GRID: <span id="hdr-grid">EL87PT</span> &nbsp;|&nbsp;
+      CLASS: <span>GENERAL</span>
+    </div>
+    <div class="clock-wrap">
+      <div id="clock-utc">00:00:00 UTC</div>
+      <div id="clock-lcl">00:00:00 LCL</div>
+    </div>
+  </div>
+</header>
+
+<!-- ═════════════ MAIN ═════════════ -->
+<div class="main">
+
+  <!-- ──── LEFT PANEL ──── -->
+  <div class="panel-l">
+    <button class="mob-toggle" onclick="mobToggle()">▾ &nbsp;New QSO Entry</button>
+    <div class="panel-l-inner" id="form-inner">
+
+      <!-- QSO ENTRY -->
+      <div class="sec-label">QSO Entry</div>
+
+      <!-- Date / Time -->
+      <div class="row2">
+        <div class="field"><label>Date (UTC)</label><input type="date" id="inp-date"></div>
+        <div class="field"><label>Time (UTC)</label><input type="time" id="inp-time"></div>
+      </div>
+
+      <!-- Callsign -->
+      <div class="row1">
+        <div class="field">
+          <label>Callsign Worked</label>
+          <div class="call-wrap">
+            <input type="text" id="inp-call" placeholder="KD9XYZ"
+              maxlength="14" autocorrect="off" autocapitalize="characters" spellcheck="false"
+              oninput="onCallInput(this.value)" onkeydown="onCallKey(event)">
+            <span class="lookup-badge idle" id="lookup-badge">QRZ</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-filled from QRZ -->
+      <div class="row2">
+        <div class="field">
+          <label>Operator Name</label>
+          <input type="text" id="inp-name" placeholder="auto-filled from QRZ">
+        </div>
+        <div class="field">
+          <label>Their Grid</label>
+          <input type="text" id="inp-their-grid" placeholder="FN42" maxlength="8" style="text-transform:uppercase">
+        </div>
+      </div>
+
+      <!-- Freq + Band -->
+      <div class="row2">
+        <div class="field">
+          <label>Frequency (MHz)</label>
+          <input type="text" id="inp-freq" placeholder="14.225" oninput="autoDetectBand(this.value)">
+        </div>
+        <div class="field">
+          <label>Band</label>
+          <select id="inp-band">
+            <option value="">— Band —</option>
+            <option>160m</option><option>80m</option><option>60m</option>
+            <option>40m</option><option>30m</option><option>20m</option>
+            <option>17m</option><option>15m</option><option>12m</option>
+            <option>10m</option><option>6m</option><option>2m</option>
+            <option>70cm</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Mode -->
+      <div class="row1">
+        <div class="field">
+          <label>Mode</label>
+          <select id="inp-mode">
+            <option value="">— Mode —</option>
+            <option>SSB</option><option>CW</option><option>FM</option>
+            <option>AM</option><option>FT8</option><option>FT4</option>
+            <option>PSK31</option><option>RTTY</option><option>JS8</option>
+            <option>DMR</option><option>D-STAR</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- RST -->
+      <div class="row2">
+        <div class="field"><label>RST Sent</label><input type="text" id="inp-rst-s" placeholder="59" maxlength="5"></div>
+        <div class="field"><label>RST Rcvd</label><input type="text" id="inp-rst-r" placeholder="59" maxlength="5"></div>
+      </div>
+
+      <!-- ──── PROGRAMS ──── -->
+      <div class="sec-label green" style="margin-top:16px;">Activation Programs</div>
+
+      <div class="prog-grid" id="prog-grid"></div>
+      <div id="prog-refs"></div>
+
+      <!-- Notes -->
+      <div class="sec-label" style="margin-top:16px;">Notes</div>
+      <div class="row1">
+        <div class="field">
+          <textarea id="inp-notes" placeholder="Extra info — contest exchange, antenna details, op QTH…"></textarea>
+        </div>
+      </div>
+
+      <!-- LOG button + row -->
+      <button class="btn btn-primary btn-full" onclick="addEntry()">⊕ &nbsp;&nbsp;LOG QSO</button>
+      <div class="btn-row">
+        <button class="btn btn-outline" onclick="clearForm(false)" style="flex:1">✕ Clear</button>
+        <button class="btn btn-outline" onclick="prefill()" style="flex:1">⟳ Now</button>
+        <div class="udp-indicator" id="udp-indicator" title="UDP bridge status">
+          <span class="udp-dot off" id="udp-dot"></span>
+          <span id="udp-lbl" style="font-family:var(--ui);font-size:0.58rem;letter-spacing:0.1em;color:var(--muted)">UDP</span>
+        </div>
+      </div>
+
+      <!-- ──── SETTINGS ACCORDION ──── -->
+      <div class="accordion-head" id="acc-settings" onclick="toggleAccordion('settings')">
+        <span>Settings</span>
+        <span class="chevron">▾</span>
+      </div>
+      <div class="accordion-body" id="acc-body-settings">
+
+        <!-- Grid Square -->
+        <div class="grid-row" style="margin-top:4px;padding-top:8px;border-top:none;">
+          <label>MY GRID</label>
+          <input type="text" id="grid-input" value="EL87PT" maxlength="8"
+            oninput="saveGrid(this.value)" title="Maidenhead grid square">
+          <button class="gps-btn" id="gps-btn" onclick="gpsGrid()">GPS</button>
+        </div>
+
+        <!-- QRZ -->
+        <div style="margin-top:14px;">
+          <div class="sec-label blue" style="margin-top:0">QRZ Logbook</div>
+          <div class="qrz-row">
+            <input type="password" id="qrz-api-key" placeholder="QRZ API key…" oninput="saveQrzKey(this.value)">
+            <button class="btn btn-outline" onclick="testQrz()" style="padding:7px 10px;font-size:0.62rem;">TEST</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span class="qrz-pill idle" id="qrz-status">—</span>
+            <button class="qrz-help-toggle" onclick="toggleQrzHelp()">How to get key ▾</button>
+          </div>
+          <div class="qrz-help" id="qrz-help">
+            1. Log in to <strong>qrz.com</strong> → <strong>Logbook</strong> → <strong>Settings</strong><br>
+            2. Under <strong>API Access</strong>, copy your <strong>API Key</strong><br>
+            3. Paste above and click TEST — session fetched automatically<br>
+            4. Requires <span class="warn">XML Logbook subscription</span> (paid) for full lookup &amp; logging
+          </div>
+        </div>
+
+        <!-- UDP Bridge -->
+        <div style="margin-top:14px;">
+          <div class="sec-label violet" style="margin-top:0">UDP Bridge (WSJT-X Format)</div>
+          <div class="udp-row">
+            <input type="text" id="udp-url" placeholder="http://localhost:12061/log"
+              oninput="saveUdpUrl(this.value)">
+            <button class="btn btn-outline" onclick="testUdpBridge()" style="padding:7px 10px;font-size:0.62rem;">TEST</button>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+            <div class="udp-indicator">
+              <span class="udp-dot off" id="udp-dot2"></span>
+              <span id="udp-status-txt" style="font-family:var(--ui);font-size:0.62rem;letter-spacing:0.08em;color:var(--muted)">Not configured</span>
+            </div>
+            <button class="qrz-help-toggle" onclick="toggleUdpHelp()">Setup guide ▾</button>
+          </div>
+          <div class="udp-help" id="udp-help">
+            Browsers can't send raw UDP — run the included <code>wsjtx_bridge.py</code> on your logging PC:<br><br>
+            <code>python3 wsjtx_bridge.py</code><br><br>
+            Bridge listens on <code>:12061</code> (HTTP) and forwards WSJT-X QSO Logged packets to your logging software on UDP <code>:2237</code>.<br><br>
+            Custom ports: <code>python3 wsjtx_bridge.py --udp-host 192.168.1.100 --udp-port 2237 --http-port 12061</code>
+          </div>
+        </div>
+
+      </div><!-- /accordion body -->
+
+    </div><!-- /panel-l-inner -->
+  </div><!-- /panel-l -->
+
+  <!-- ──── RIGHT PANEL ──── -->
+  <div class="panel-r">
+
+    <!-- Stats -->
+    <div class="stats-strip">
+      <div class="stat-card"><span class="stat-val" id="stat-total">0</span><span class="stat-lbl">Total QSOs</span></div>
+      <div class="stat-card"><span class="stat-val" id="stat-unique">0</span><span class="stat-lbl">Unique Calls</span></div>
+      <div class="stat-card"><span class="stat-val" id="stat-bands">—</span><span class="stat-lbl">Bands Worked</span></div>
+      <div class="stat-card"><span class="stat-val" id="stat-last" style="font-size:0.82rem;letter-spacing:0.04em;">—</span><span class="stat-lbl">Last Contact</span></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <input type="text" id="search" placeholder="Search callsign, band, mode, program…" oninput="renderTable()">
+      </div>
+      <button class="btn btn-outline" onclick="exportADIF()">⤓ ADIF</button>
+      <button class="btn btn-outline" onclick="exportCSV()">⤓ CSV</button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Callsign</th>
+            <th>Freq</th>
+            <th>Band</th>
+            <th>Mode</th>
+            <th>RST</th>
+            <th>Programs</th>
+            <th>Name</th>
+            <th>Notes</th>
+            <th>QRZ</th>
+            <th>UDP</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="log-body">
+          <tr><td colspan="14">
+            <div class="empty-log">
+              <span class="empty-icon">📻</span>
+              <div class="empty-msg">No contacts logged yet</div>
+              <div class="empty-sub"><span class="blink">█</span> Ready to log QSOs</div>
+            </div>
+          </td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div><!-- /panel-r -->
+</div><!-- /main -->
+
+<!-- FOOTER -->
+<footer>
+  <div class="ft-call">W4GGJ &nbsp;·&nbsp; GRUMPAGRINCH &nbsp;·&nbsp; 73 DE W4GGJ</div>
+  <div class="ft-info">All times UTC &nbsp;·&nbsp; Log stored locally &nbsp;·&nbsp; PWA offline-capable</div>
+</footer>
+
+</div><!-- /app -->
+<div id="toast"></div>
+
+<!-- ═══════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════ -->
+<script>
+'use strict';
+
+/* ─── State ─── */
+let log = JSON.parse(localStorage.getItem('w4ggj_log') || '[]');
+const activePrograms = new Set();
+
+/* ─── Utils ─── */
+const $  = id => document.getElementById(id);
+const pad = x  => String(x).padStart(2, '0');
+
+function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); }
+
+function nowUTC() {
+  const n = new Date();
+  return {
+    date: `${n.getUTCFullYear()}-${pad(n.getUTCMonth()+1)}-${pad(n.getUTCDate())}`,
+    time: `${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}`
+  };
+}
+
+/* ─── Clock ─── */
+function updateClock() {
+  const n = new Date();
+  $('clock-utc').textContent = `${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())}:${pad(n.getUTCSeconds())} UTC`;
+  $('clock-lcl').textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())} LCL`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+/* ─── Prefill ─── */
+function prefill() {
+  const { date, time } = nowUTC();
+  $('inp-date').value = date;
+  $('inp-time').value = time;
+}
+prefill();
+
+/* ─── Freq → Band ─── */
+const BAND_MAP = [
+  [1.8,   2.0,   '160m'], [3.5,  4.0,   '80m'],
+  [5.33,  5.41,  '60m'],  [7.0,  7.3,   '40m'],
+  [10.1,  10.15, '30m'],  [14.0, 14.35, '20m'],
+  [18.068,18.168,'17m'],  [21.0, 21.45, '15m'],
+  [24.89, 24.99, '12m'],  [28.0, 29.7,  '10m'],
+  [50.0,  54.0,  '6m'],   [144.0,148.0, '2m'],
+  [420.0, 450.0, '70cm'],
+];
+function autoDetectBand(v) {
+  const f = parseFloat(v);
+  if (isNaN(f)) return;
+  const m = BAND_MAP.find(([lo, hi]) => f >= lo && f <= hi);
+  if (m) $('inp-band').value = m[2];
+}
+
+/* ─── Grid Square ─── */
+const savedGrid = localStorage.getItem('w4ggj_grid');
+if (savedGrid) { $('grid-input').value = savedGrid; $('hdr-grid').textContent = savedGrid; }
+
+function saveGrid(v) {
+  v = v.toUpperCase();
+  $('grid-input').value = v;
+  $('hdr-grid').textContent = v;
+  localStorage.setItem('w4ggj_grid', v);
+}
+
+function latLonToGrid(lat, lon) {
+  lon += 180; lat += 90;
+  const A = 'A'.charCodeAt(0);
+  const f1 = String.fromCharCode(A + Math.floor(lon / 20));
+  const f2 = String.fromCharCode(A + Math.floor(lat / 10));
+  const f3 = Math.floor((lon % 20) / 2);
+  const f4 = Math.floor(lat % 10);
+  const f5 = String.fromCharCode(A + Math.floor((lon % 2) * 12));
+  const f6 = String.fromCharCode(A + Math.floor((lat % 1) * 24));
+  return (f1 + f2 + f3 + f4 + f5.toLowerCase() + f6.toLowerCase());
+}
+
+function gpsGrid() {
+  if (!navigator.geolocation) { toast('GPS not supported', 'err'); return; }
+  const btn = $('gps-btn');
+  btn.textContent = '…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const g = latLonToGrid(pos.coords.latitude, pos.coords.longitude);
+      saveGrid(g); btn.textContent = 'GPS';
+      toast(`Grid updated: ${g}`, 'ok');
+    },
+    err => {
+      btn.textContent = 'GPS';
+      const msgs = ['','Permission denied','Position unavailable','Timeout'];
+      toast(`GPS: ${msgs[err.code] || 'Error'}`, 'err');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+/* ══════════════════════════════════════════
+   PROGRAMS
+══════════════════════════════════════════ */
+const PROGRAMS = [
+  { id:'pota',  label:'POTA',  ph:'US-1234',   myAdif:'MY_POTA_REF', theirAdif:'POTA_REF',     hasRole:true,  searchable:true,  hint:'Parks on the Air' },
+  { id:'wwff',  label:'WWFF',  ph:'KFF-1234',  myAdif:'MY_WWFF_REF', theirAdif:'WWFF_REF',     hasRole:true,  searchable:false, hint:'World Wildlife Flora & Fauna' },
+  { id:'sota',  label:'SOTA',  ph:'W4/TN-001', myAdif:'MY_SOTA_REF', theirAdif:'SOTA_REF',     hasRole:true,  searchable:false, hint:'Summits on the Air' },
+  { id:'iota',  label:'IOTA',  ph:'NA-001',    myAdif:'MY_IOTA',     theirAdif:'IOTA',          hasRole:false, searchable:false, hint:'Islands on the Air' },
+  { id:'bota',  label:'BOTA',  ph:'K-BAY-001', myAdif:'MY_BOTA_REF', theirAdif:'BOTA_REF',     hasRole:true,  searchable:false, hint:'Bays on the Air' },
+  { id:'gma',   label:'GMA',   ph:'W-0001',    myAdif:'MY_GMA_REF',  theirAdif:'GMA_REF',      hasRole:true,  searchable:false, hint:'Global Mountain Activity' },
+  { id:'lota',  label:'LOTA',  ph:'US-LS-001', myAdif:'MY_LOTA_REF', theirAdif:'LOTA_REF',     hasRole:true,  searchable:false, hint:'Lighthouses on the Air' },
+  { id:'wca',   label:'WCA',   ph:'K-01234',   myAdif:'MY_WCA_REF',  theirAdif:'WCA_REF',      hasRole:true,  searchable:false, hint:'World Castles Award' },
+];
+
+function buildProgramButtons() {
+  const grid = $('prog-grid');
+  grid.innerHTML = PROGRAMS.map(p =>
+    `<button class="prog-btn" id="pb-${p.id}" onclick="toggleProgram('${p.id}')">${p.label}</button>`
+  ).join('');
+}
+
+function toggleProgram(id) {
+  if (activePrograms.has(id)) {
+    activePrograms.delete(id);
+    const btn = $(`pb-${id}`);
+    if (btn) btn.classList.remove('active');
+  } else {
+    activePrograms.add(id);
+    const btn = $(`pb-${id}`);
+    if (btn) btn.classList.add('active');
+  }
+  renderProgramRefs();
+}
+
+function renderProgramRefs() {
+  const container = $('prog-refs');
+  if (activePrograms.size === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = [...activePrograms].map(id => {
+    const p = PROGRAMS.find(x => x.id === id);
+    const searchInput = p.searchable ? `
+      <div class="pota-wrap">
+        <input type="text" id="prog-ref-${id}" placeholder="${p.ph}"
+          style="text-transform:uppercase"
+          oninput="handleProgRefInput('${id}', this.value)">
+        ${id === 'pota' ? '<div id="pota-dd"></div>' : ''}
+      </div>` :
+      `<input type="text" id="prog-ref-${id}" placeholder="${p.ph}" style="text-transform:uppercase">`;
+
+    return `<div class="prog-ref-block">
+      <div class="prog-ref-header">
+        ${p.label}
+        <span class="prog-hint">${p.hint}</span>
+      </div>
+      <div class="prog-ref-row${p.hasRole ? '' : ' solo'}">
+        ${searchInput}
+        ${p.hasRole ? `<select id="prog-role-${id}" style="width:120px;font-size:0.72rem;padding:7px 26px 7px 8px;">
+          <option value="activator">Activator</option>
+          <option value="hunter">Hunter/Chaser</option>
+        </select>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Re-attach POTA dropdown close handler
+  if (activePrograms.has('pota')) {
+    document.addEventListener('click', closePotaDropdown, { once: false });
+  }
+}
+
+/* ─── POTA Park Search ─── */
+const POTA_PARKS = [
+  // Joe's parks
+  ["US-6700","Sawgrass Lake Park","Pinellas County, FL"],
+  ["US-1916","Skyway Fishing Pier SP","Pinellas County, FL"],
+  ["US-1837","Hillsborough River SP","Hillsborough County, FL"],
+  ["US-1829","Alafia River SP","Hillsborough County, FL"],
+  ["US-1838","Honeymoon Island SP","Pinellas County, FL"],
+  ["US-1833","Caladesi Island SP","Pinellas County, FL"],
+  ["US-1866","Werner-Boyce Salt Springs SP","Pasco County, FL"],
+  ["US-1848","Little Manatee River SP","Hillsborough County, FL"],
+  ["US-1859","Oscar Scherer SP","Sarasota County, FL"],
+  ["US-1844","Lake Manatee SP","Manatee County, FL"],
+  ["US-1867","Withlacoochee State Forest","Hernando/Pasco/Citrus County, FL"],
+  ["US-1856","Myakka River SP","Sarasota County, FL"],
+  ["US-1839","Jonathan Dickinson SP","Martin County, FL"],
+  ["US-1873","Wekiwa Springs SP","Orange County, FL"],
+  ["US-1842","Lake Kissimmee SP","Polk County, FL"],
+  ["US-1840","Kissimmee Prairie Preserve SP","Okeechobee County, FL"],
+  // Florida State Parks
+  ["US-1830","Anastasia SP","St. Johns County, FL"],
+  ["US-1831","Bill Baggs Cape Florida SP","Miami-Dade County, FL"],
+  ["US-1832","Bahia Honda SP","Monroe County, FL"],
+  ["US-1834","Blackwater River SP","Santa Rosa County, FL"],
+  ["US-1836","Fort Pierce Inlet SP","St. Lucie County, FL"],
+  ["US-1858","O'Leno SP","Columbia County, FL"],
+  ["US-1860","Paynes Prairie Preserve SP","Alachua County, FL"],
+  ["US-1862","Rainbow Springs SP","Marion County, FL"],
+  ["US-1863","Sebastian Inlet SP","Indian River County, FL"],
+  ["US-1864","Silver River SP","Marion County, FL"],
+  ["US-1865","Silver Springs SP","Marion County, FL"],
+  ["US-1868","Suwannee River SP","Suwannee County, FL"],
+  ["US-1869","Topsail Hill Preserve SP","Walton County, FL"],
+  ["US-1870","Torreya SP","Liberty County, FL"],
+  ["US-1872","Washington Oaks Gardens SP","Flagler County, FL"],
+  ["US-1874","Blue Spring SP","Volusia County, FL"],
+  ["US-1875","Cayo Costa SP","Lee County, FL"],
+  ["US-1876","De Leon Springs SP","Volusia County, FL"],
+  ["US-1877","Fakahatchee Strand Preserve SP","Collier County, FL"],
+  ["US-1879","Fanning Springs SP","Gilchrist County, FL"],
+  ["US-1880","Florida Caverns SP","Jackson County, FL"],
+  ["US-1881","Fort Clinch SP","Nassau County, FL"],
+  ["US-1882","Fort Cooper SP","Citrus County, FL"],
+  ["US-1883","Fort Zachary Taylor Historic SP","Monroe County, FL"],
+  ["US-1885","Gold Head Branch SP","Clay County, FL"],
+  ["US-1886","Grayton Beach SP","Walton County, FL"],
+  ["US-1887","Homosassa Springs Wildlife SP","Citrus County, FL"],
+  ["US-1888","Ichetucknee Springs SP","Columbia County, FL"],
+  ["US-1890","Little Talbot Island SP","Duval County, FL"],
+  ["US-1892","Manatee Springs SP","Levy County, FL"],
+  ["US-1894","Ocala National Forest","Marion County, FL"],
+  ["US-1895","Osceola National Forest","Columbia County, FL"],
+  // Florida Federal
+  ["US-0024","Everglades National Park","Florida"],
+  ["US-0007","Biscayne Bay National Park","Florida"],
+  ["US-0023","Dry Tortugas National Park","Florida"],
+  ["US-0238","Egmont Key National Wildlife Refuge","Florida"],
+  ["US-0249","Merritt Island National Wildlife Refuge","Florida"],
+  ["US-0235","Chassahowitzka National Wildlife Refuge","Florida"],
+  // Major US National Parks
+  ["US-0001","Acadia National Park","Maine"],
+  ["US-0004","Arches National Park","Utah"],
+  ["US-0005","Badlands National Park","South Dakota"],
+  ["US-0006","Big Bend National Park","Texas"],
+  ["US-0009","Bryce Canyon National Park","Utah"],
+  ["US-0010","Canyonlands National Park","Utah"],
+  ["US-0018","Crater Lake National Park","Oregon"],
+  ["US-0022","Denali National Park","Alaska"],
+  ["US-0028","Glacier National Park","Montana"],
+  ["US-0030","Grand Canyon National Park","Arizona"],
+  ["US-0031","Grand Teton National Park","Wyoming"],
+  ["US-0034","Great Smoky Mountains National Park","Tennessee/North Carolina"],
+  ["US-0041","Joshua Tree National Park","California"],
+  ["US-0050","Mammoth Cave National Park","Kentucky"],
+  ["US-0052","Mount Rainier National Park","Washington"],
+  ["US-0056","Olympic National Park","Washington"],
+  ["US-0059","Rocky Mountain National Park","Colorado"],
+  ["US-0063","Sequoia National Park","California"],
+  ["US-0064","Shenandoah National Park","Virginia"],
+  ["US-0070","Yellowstone National Park","Wyoming/Montana/Idaho"],
+  ["US-0071","Yosemite National Park","California"],
+  ["US-0072","Zion National Park","Utah"],
+];
+const POTA_IDX = POTA_PARKS.map(([ref, name, loc]) => ({
+  reference: ref, name, locationName: loc,
+  _s: (ref + ' ' + name + ' ' + loc).toLowerCase()
+}));
+
+let potaTimer = null;
+
+function handleProgRefInput(id, val) {
+  if (id === 'pota') potaSearch(val);
+}
+
+function potaSearch(q) {
+  const dd = $('pota-dd');
+  if (!dd) return;
+  q = q.trim();
+  if (q.length < 2) { dd.classList.remove('open'); return; }
+  clearTimeout(potaTimer);
+  potaTimer = setTimeout(() => {
+    const ql = q.toLowerCase();
+    const matches = POTA_IDX.filter(p => p._s.includes(ql)).slice(0, 10);
+    dd.classList.add('open');
+    if (!matches.length) {
+      dd.innerHTML = `
+        <div class="pota-opt" onclick="selectPark('${esc(q.toUpperCase())}','${esc(q.toUpperCase())}','')">
+          <div class="pota-ref">USE: ${q.toUpperCase()}</div>
+          <div class="pota-name">Enter reference as typed</div>
+        </div>`;
+      return;
+    }
+    dd.innerHTML = matches.map(p =>
+      `<div class="pota-opt" onclick="selectPark('${esc(p.reference)}','${esc(p.name)}','${esc(p.locationName)}')">
+        <div class="pota-ref">${p.reference}</div>
+        <div class="pota-name">${p.name}</div>
+        <div class="pota-loc">${p.locationName}</div>
+      </div>`
+    ).join('');
+  }, 150);
+}
+
+function selectPark(ref, name, loc) {
+  const inp = $('prog-ref-pota');
+  if (inp) inp.value = ref;
+  const dd = $('pota-dd');
+  if (dd) dd.classList.remove('open');
+}
+
+function closePotaDropdown(e) {
+  const dd = $('pota-dd');
+  if (!dd) return;
+  const search = $('prog-ref-pota');
+  if (!e.target.closest('#pota-dd') && e.target !== search) dd.classList.remove('open');
+}
+
+function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+/* ══════════════════════════════════════════
+   QRZ
+══════════════════════════════════════════ */
+let qrzSession = null;
+let lookupTimer = null;
+
+const savedQrzKey = localStorage.getItem('w4ggj_qrz_key');
+if (savedQrzKey) $('qrz-api-key').value = savedQrzKey;
+
+function saveQrzKey(v) { localStorage.setItem('w4ggj_qrz_key', v.trim()); qrzSession = null; }
+
+function setQrzStatus(msg, cls) {
+  const el = $('qrz-status');
+  el.textContent = msg;
+  el.className = 'qrz-pill ' + (cls || 'idle');
+}
+
+async function getQrzSession() {
+  if (qrzSession) return qrzSession;
+  const key = $('qrz-api-key').value.trim();
+  if (!key) { setQrzStatus('No API key', 'err'); return null; }
+  setQrzStatus('Connecting…', 'pending');
+  try {
+    const url = `https://xmldata.qrz.com/xml/current/?api=${encodeURIComponent(key)}`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+    const txt = await res.text();
+    const m = txt.match(/<Key>([^<]+)<\/Key>/);
+    if (m) { qrzSession = m[1]; setQrzStatus('● Connected', 'ok'); return qrzSession; }
+    const e = txt.match(/<Error>([^<]+)<\/Error>/);
+    setQrzStatus('✕ ' + (e ? e[1] : 'Auth failed'), 'err');
+    return null;
+  } catch { setQrzStatus('✕ Network error', 'err'); return null; }
+}
+
+async function testQrz() { qrzSession = null; await getQrzSession(); }
+function toggleQrzHelp() {
+  const h = $('qrz-help');
+  h.style.display = h.style.display === 'none' ? 'block' : 'none';
+}
+
+/* ─── Callsign input → debounced QRZ lookup ─── */
+function onCallInput(val) {
+  const v = val.toUpperCase().replace(/[^A-Z0-9/]/g, '');
+  $('inp-call').value = v;
+  clearQrzFields();
+  clearTimeout(lookupTimer);
+  const badge = $('lookup-badge');
+  if (!v || v.length < 3) { badge.className = 'lookup-badge idle'; badge.textContent = 'QRZ'; return; }
+  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  lookupTimer = setTimeout(() => lookupCallsign(v), 1200);
+}
+
+function onCallKey(e) {
+  if (e.key === 'Tab' || e.key === 'Enter') {
+    clearTimeout(lookupTimer);
+    const v = $('inp-call').value.trim().toUpperCase();
+    if (v.length >= 3) lookupCallsign(v);
+  }
+}
+
+function clearQrzFields() {
+  $('inp-name').value = '';
+  $('inp-their-grid').value = '';
+  $('inp-name').classList.remove('qrz-filled');
+  $('inp-their-grid').classList.remove('qrz-filled');
+}
+
+async function lookupCallsign(call) {
+  const badge = $('lookup-badge');
+  const key = $('qrz-api-key').value.trim();
+  if (!key) { badge.className = 'lookup-badge nokey'; badge.textContent = 'NO KEY'; return; }
+
+  const session = await getQrzSession();
+  if (!session) { badge.className = 'lookup-badge fail'; badge.textContent = 'ERR'; return; }
+
+  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  try {
+    const url = `https://xmldata.qrz.com/xml/current/?s=${encodeURIComponent(session)}&callsign=${encodeURIComponent(call)}`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+    const txt = await res.text();
+
+    // Check for session expiry
+    if (txt.includes('Session Timeout') || txt.includes('Invalid session')) {
+      qrzSession = null;
+      const s2 = await getQrzSession();
+      if (s2) { lookupCallsign(call); return; }
+      badge.className = 'lookup-badge fail'; badge.textContent = 'SESSION'; return;
+    }
+
+    // Parse XML fields
+    const get = tag => { const m = txt.match(new RegExp(`<${tag}>([^<]*)<\/${tag}>`,'i')); return m ? m[1].trim() : ''; };
+
+    const fname   = get('fname');
+    const lname   = get('name');
+    const city    = get('addr2');
+    const state   = get('state');
+    const country = get('country');
+    const grid    = get('grid');
+    const dxcc    = get('dxcc');
+
+    const hasData = fname || lname || grid;
+
+    if (hasData) {
+      const fullName = [fname, lname].filter(Boolean).join(' ');
+      if (fullName) {
+        $('inp-name').value = fullName;
+        $('inp-name').classList.add('qrz-filled');
+      }
+      if (grid) {
+        $('inp-their-grid').value = grid.toUpperCase().slice(0,6);
+        $('inp-their-grid').classList.add('qrz-filled');
+      }
+
+      // Build short status label
+      const loc = [city, state, country].filter(Boolean).join(', ');
+      badge.className = 'lookup-badge ok';
+      badge.textContent = dxcc ? dxcc : '✓';
+      badge.title = `${fullName}${loc ? ' — ' + loc : ''}`;
+
+      // Pre-populate notes with QTH if empty
+      if (!$('inp-notes').value.trim() && loc) {
+        $('inp-notes').value = loc;
+      }
+    } else {
+      badge.className = 'lookup-badge fail';
+      badge.textContent = 'N/F';
+      badge.title = 'Not found in QRZ';
+    }
+  } catch {
+    badge.className = 'lookup-badge fail';
+    badge.textContent = 'ERR';
+  }
+}
+
+async function logToQrz(entry) {
+  const session = await getQrzSession();
+  if (!session) return 'NO_SESSION';
+  const dateStr = entry.date.replace(/-/g,'');
+  const timeStr = entry.time.replace(':','') + '00';
+  const grid = $('grid-input').value.trim();
+
+  let adif = buildAdifRecord(entry, grid);
+  try {
+    const url = `https://xmldata.qrz.com/xml/current/?action=INSERT&KEY=${encodeURIComponent(session)}&ADIF=${encodeURIComponent(adif)}`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(url)}`);
+    const txt = await res.text();
+    if (txt.includes('<result>OK</result>') || txt.includes('REPLACE') || txt.includes('INSERT')) return 'OK';
+    const err = txt.match(/<Error>([^<]+)<\/Error>/);
+    if (err && err[1].includes('session')) { qrzSession = null; return 'SESSION_EXPIRED'; }
+    return 'FAIL: ' + (err ? err[1] : 'Unknown');
+  } catch { return 'NETWORK_ERROR'; }
+}
+
+/* ══════════════════════════════════════════
+   UDP BRIDGE
+══════════════════════════════════════════ */
+const savedUdpUrl = localStorage.getItem('w4ggj_udp_url');
+if (savedUdpUrl) $('udp-url').value = savedUdpUrl;
+
+function saveUdpUrl(v) { localStorage.setItem('w4ggj_udp_url', v.trim()); }
+function toggleUdpHelp() {
+  const h = $('udp-help');
+  h.style.display = h.style.display === 'none' ? 'block' : 'none';
+}
+
+function setUdpStatus(state, label) {
+  const dots = [document.getElementById('udp-dot'), document.getElementById('udp-dot2')];
+  dots.forEach(d => { if (d) d.className = `udp-dot ${state}`; });
+  const lbl = $('udp-lbl');
+  const txt = $('udp-status-txt');
+  if (lbl) lbl.textContent = 'UDP';
+  if (txt) txt.textContent = label;
+}
+
+async function sendUdpLog(entry) {
+  const url = ($('udp-url').value || '').trim();
+  if (!url) { setUdpStatus('off', 'Not configured'); return 'DISABLED'; }
+
+  setUdpStatus('busy', 'Sending…');
+  try {
+    const payload = {
+      call:       entry.call,
+      date:       entry.date,
+      time:       entry.time,
+      freq:       entry.freq,
+      band:       entry.band,
+      mode:       entry.mode,
+      rst_s:      entry.rstS,
+      rst_r:      entry.rstR,
+      name:       entry.name || '',
+      their_grid: entry.theirGrid || '',
+      my_grid:    $('grid-input').value.trim(),
+      notes:      entry.notes || '',
+      operator:   'W4GGJ',
+      programs:   entry.programs || {},
+    };
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(4000),
+    });
+
+    if (res.ok) {
+      setUdpStatus('ok', 'Sent ✓');
+      return 'OK';
+    }
+    setUdpStatus('err', `HTTP ${res.status}`);
+    return `HTTP_${res.status}`;
+  } catch (e) {
+    const msg = e.name === 'AbortError' ? 'Timeout' : 'Bridge offline';
+    setUdpStatus('err', msg);
+    return e.name === 'AbortError' ? 'TIMEOUT' : 'NOT_RUNNING';
+  }
+}
+
+async function testUdpBridge() {
+  const testEntry = {
+    call: 'W4GGJ', date: nowUTC().date, time: nowUTC().time,
+    freq: '14.225', band: '20m', mode: 'SSB', rstS: '59', rstR: '59',
+    name: 'Test', theirGrid: 'EL87PT', notes: 'Bridge test ping', programs: {}
+  };
+  const r = await sendUdpLog(testEntry);
+  toast(r === 'OK' ? 'UDP Bridge: Connected ✓' : `UDP Bridge: ${r}`, r === 'OK' ? 'ok' : 'err');
+}
+
+/* ══════════════════════════════════════════
+   ADIF RECORD BUILDER
+══════════════════════════════════════════ */
+function adifField(tag, val) {
+  if (!val) return '';
+  const s = String(val);
+  return ` <${tag}:${s.length}>${s}`;
+}
+
+function buildAdifRecord(entry, myGrid) {
+  const dateStr = entry.date.replace(/-/g,'');
+  const timeStr = entry.time.replace(':','') + '00';
+  let rec = '';
+  rec += adifField('CALL', entry.call);
+  rec += adifField('QSO_DATE', dateStr);
+  rec += adifField('TIME_ON', timeStr);
+  rec += adifField('FREQ', entry.freq);
+  rec += adifField('BAND', entry.band);
+  rec += adifField('MODE', entry.mode);
+  rec += adifField('RST_SENT', entry.rstS);
+  rec += adifField('RST_RCVD', entry.rstR);
+  rec += adifField('NAME', entry.name);
+  rec += adifField('GRIDSQUARE', entry.theirGrid);
+  rec += adifField('MY_GRIDSQUARE', myGrid);
+  rec += adifField('COMMENT', entry.notes);
+  rec += adifField('STATION_CALLSIGN', 'W4GGJ');
+  rec += adifField('OPERATOR', 'W4GGJ');
+
+  // Programs
+  if (entry.programs) {
+    Object.entries(entry.programs).forEach(([id, data]) => {
+      const prog = PROGRAMS.find(p => p.id === id);
+      if (!prog || !data.ref) return;
+      const adifTag = (data.role === 'activator') ? prog.myAdif : prog.theirAdif;
+      rec += adifField(adifTag, data.ref);
+    });
+  }
+  rec += ' <EOR>';
+  return rec.trim();
+}
+
+/* ══════════════════════════════════════════
+   ADD / DELETE ENTRY
+══════════════════════════════════════════ */
+function collectPrograms() {
+  const progs = {};
+  activePrograms.forEach(id => {
+    const ref = ($(`prog-ref-${id}`)?.value || '').trim().toUpperCase();
+    const role = $(`prog-role-${id}`)?.value || 'activator';
+    if (ref) progs[id] = { ref, role };
+    else progs[id] = { ref: '', role };
+  });
+  return progs;
+}
+
+async function addEntry() {
+  const call = $('inp-call').value.trim().toUpperCase();
+  if (!call) { toast('Callsign required', 'wrn'); return; }
+
+  const entry = {
+    id:         Date.now(),
+    date:       $('inp-date').value  || nowUTC().date,
+    time:       $('inp-time').value  || nowUTC().time,
+    call,
+    freq:       $('inp-freq').value.trim(),
+    band:       $('inp-band').value,
+    mode:       $('inp-mode').value,
+    rstS:       $('inp-rst-s').value.trim() || '59',
+    rstR:       $('inp-rst-r').value.trim() || '59',
+    name:       $('inp-name').value.trim(),
+    theirGrid:  $('inp-their-grid').value.trim().toUpperCase(),
+    notes:      $('inp-notes').value.trim(),
+    programs:   collectPrograms(),
+    qrzStatus:  'pending',
+    udpStatus:  'pending',
+  };
+
+  log.unshift(entry);
+  save();
+  renderTable();
+  updateStats();
+  clearForm(true);
+  toast(`Logged: ${call}`, 'ok');
+  advanceTime();
+
+  // Fire both async — QRZ logbook upload + UDP bridge
+  const udpPromise = sendUdpLog(entry).then(r => {
+    entry.udpStatus = (r === 'OK') ? 'ok' : (r === 'DISABLED' ? 'none' : 'fail');
+    save(); renderTable();
+  });
+
+  const qrzKey = $('qrz-api-key').value.trim();
+  if (qrzKey) {
+    logToQrz(entry).then(r => {
+      entry.qrzStatus = (r === 'OK') ? 'ok' : 'fail';
+      save(); renderTable();
+      if (r === 'OK') toast(`QRZ: ${call} uploaded ✓`, 'ok');
+      else toast(`QRZ upload failed: ${r}`, 'err');
+    });
+  } else {
+    entry.qrzStatus = 'none';
+    save(); renderTable();
+  }
+}
+
+function advanceTime() {
+  const t = $('inp-time').value;
+  if (!t) return;
+  const [h, m] = t.split(':').map(Number);
+  const d = new Date(); d.setUTCHours(h, m + 1, 0, 0);
+  $('inp-time').value = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+function deleteEntry(id) {
+  if (!confirm('Delete this QSO?')) return;
+  log = log.filter(e => e.id !== id);
+  save(); renderTable(); updateStats();
+  toast('QSO deleted');
+}
+
+async function retryQrz(id) {
+  const entry = log.find(e => e.id === id);
+  if (!entry) return;
+  entry.qrzStatus = 'pending'; save(); renderTable();
+  const r = await logToQrz(entry);
+  entry.qrzStatus = (r === 'OK') ? 'ok' : 'fail';
+  save(); renderTable();
+  toast(r === 'OK' ? `QRZ: ${entry.call} ✓` : `QRZ retry failed: ${r}`, r === 'OK' ? 'ok' : 'err');
+}
+
+async function retryUdp(id) {
+  const entry = log.find(e => e.id === id);
+  if (!entry) return;
+  const r = await sendUdpLog(entry);
+  entry.udpStatus = (r === 'OK') ? 'ok' : 'fail';
+  save(); renderTable();
+}
+
+/* ══════════════════════════════════════════
+   CLEAR FORM
+══════════════════════════════════════════ */
+function clearForm(keepDt = false) {
+  if (!keepDt) prefill();
+  ['inp-call','inp-freq','inp-rst-s','inp-rst-r','inp-notes','inp-name','inp-their-grid']
+    .forEach(id => $(id).value = '');
+  ['inp-name','inp-their-grid'].forEach(id => $(id).classList.remove('qrz-filled'));
+  $('inp-band').value = '';
+  $('inp-mode').value = '';
+  $('lookup-badge').className = 'lookup-badge idle';
+  $('lookup-badge').textContent = 'QRZ';
+  $('lookup-badge').title = '';
+  clearTimeout(lookupTimer);
+
+  // Clear active programs but keep toggle state
+  // Just clear the reference inputs
+  activePrograms.forEach(id => {
+    const inp = $(`prog-ref-${id}`);
+    if (inp) inp.value = '';
+    const dd = $('pota-dd');
+    if (dd) dd.classList.remove('open');
+  });
+
+  $('inp-call').focus();
+}
+
+/* ══════════════════════════════════════════
+   RENDER TABLE
+══════════════════════════════════════════ */
+function renderTable() {
+  const q = ($('search').value || '').toLowerCase();
+  const filtered = q ? log.filter(e => {
+    const progs = Object.entries(e.programs || {}).map(([id,d]) => id + ' ' + (d.ref||'')).join(' ');
+    return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + progs).toLowerCase().includes(q);
+  }) : log;
+
+  const tbody = $('log-body');
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
+      <span class="empty-icon">📻</span>
+      <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
+      <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
+    </div></td></tr>`;
+    return;
+  }
+
+  const total = filtered.length;
+  tbody.innerHTML = filtered.map((e, i) => {
+    // Programs cell
+    let progCell = '';
+    if (e.programs && Object.keys(e.programs).length) {
+      progCell = '<div class="prog-badges">';
+      Object.entries(e.programs).forEach(([id, d]) => {
+        if (!d || (!d.ref && d.ref !== '')) return;
+        const cls = d.role === 'activator' ? 'pb-act' : 'pb-hnt';
+        progCell += `<span class="pb ${cls}">${id.toUpperCase()}</span>`;
+        if (d.ref) progCell += `<span class="pb-ref">${d.ref}</span>`;
+      });
+      progCell += '</div>';
+    } else {
+      progCell = '<span style="color:var(--border2)">—</span>';
+    }
+
+    const qrzCell = e.qrzStatus === 'ok'      ? '<span class="qc-ok">✓</span>'
+      : e.qrzStatus === 'fail'     ? `<span class="qc-fail" onclick="retryQrz(${e.id})" title="Retry">✕</span>`
+      : e.qrzStatus === 'pending'  ? '<span class="qc-pend">…</span>'
+      : '<span class="qc-none">—</span>';
+
+    const udpCell = e.udpStatus === 'ok'   ? '<span class="uc-ok">✓</span>'
+      : e.udpStatus === 'fail' ? `<span class="uc-fail" onclick="retryUdp(${e.id})" title="Retry UDP" style="cursor:pointer;text-decoration:underline dashed">✕</span>`
+      : '<span class="uc-off">—</span>';
+
+    return `<tr>
+      <td class="td-n">${total - i}</td>
+      <td class="td-date">${e.date}</td>
+      <td class="td-time">${e.time}</td>
+      <td class="td-call">${e.call}</td>
+      <td class="td-freq">${e.freq||'—'}</td>
+      <td class="td-band">${e.band||'—'}</td>
+      <td class="td-mode">${e.mode||'—'}</td>
+      <td class="td-rst">${e.rstS||'59'}/${e.rstR||'59'}</td>
+      <td>${progCell}</td>
+      <td class="td-name">${e.name||'—'}</td>
+      <td class="td-notes" title="${(e.notes||'').replace(/"/g,'&quot;')}">${e.notes||'—'}</td>
+      <td>${qrzCell}</td>
+      <td>${udpCell}</td>
+      <td><button class="btn btn-danger" onclick="deleteEntry(${e.id})">DEL</button></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════
+   STATS
+══════════════════════════════════════════ */
+function updateStats() {
+  $('stat-total').textContent  = log.length;
+  $('stat-unique').textContent = new Set(log.map(e => e.call)).size;
+  const bands = [...new Set(log.filter(e => e.band).map(e => e.band))];
+  $('stat-bands').textContent  = bands.length || '—';
+  $('stat-last').textContent   = log.length ? log[0].call : '—';
+}
+
+/* ══════════════════════════════════════════
+   EXPORT
+══════════════════════════════════════════ */
+function exportADIF() {
+  if (!log.length) { toast('Nothing to export', 'wrn'); return; }
+  const grid = $('grid-input').value.trim();
+  let out = `Generated by W4GGJ QSO Logger v3\n<ADIF_VER:5>3.1.0\n<EOH>\n\n`;
+  log.forEach(e => { out += buildAdifRecord(e, grid) + '\n'; });
+  dl(out, `W4GGJ_${nowUTC().date}.adi`, 'text/plain');
+  toast('ADIF exported', 'ok');
+}
+
+function exportCSV() {
+  if (!log.length) { toast('Nothing to export', 'wrn'); return; }
+  const hdr = ['#','Date','Time','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
+  const rows = log.map((e, i) => {
+    const progStr = Object.entries(e.programs || {})
+      .map(([id, d]) => `${id.toUpperCase()}:${d.ref}(${d.role?.[0]||'?'})`)
+      .join(' ');
+    return [
+      log.length - i, e.date, e.time, e.call, e.freq, e.band, e.mode,
+      e.rstS, e.rstR, e.name||'', e.theirGrid||'',
+      (e.notes||'').replace(/,/g,';'), progStr
+    ].join(',');
+  });
+  dl([hdr,...rows].join('\n'), `W4GGJ_${nowUTC().date}.csv`, 'text/csv');
+  toast('CSV exported', 'ok');
+}
+
+function dl(content, filename, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ══════════════════════════════════════════
+   ACCORDION
+══════════════════════════════════════════ */
+function toggleAccordion(id) {
+  const head = $(`acc-${id}`);
+  const body = $(`acc-body-${id}`);
+  const open = body.classList.contains('open');
+  body.classList.toggle('open', !open);
+  head.classList.toggle('open', !open);
+}
+
+/* ══════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════ */
+let toastT = null;
+function toast(msg, type = '') {
+  const el = $('toast');
+  el.textContent = msg;
+  el.className = `show${type ? ' t'+type : ''}`;
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('show'), 3400);
+}
+
+/* ══════════════════════════════════════════
+   MOBILE TOGGLE
+══════════════════════════════════════════ */
+function mobToggle() {
+  const inner = $('form-inner');
+  inner.classList.toggle('mob-hidden');
+}
+
+/* ══════════════════════════════════════════
+   PWA
+══════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
+
+/* ══════════════════════════════════════════
+   INIT
+══════════════════════════════════════════ */
+buildProgramButtons();
+renderTable();
+updateStats();
+
+// Init UDP indicator
+const udpUrl = localStorage.getItem('w4ggj_udp_url');
+if (udpUrl) { $('udp-url').value = udpUrl; setUdpStatus('idle', udpUrl.replace('http://','').replace('/log','')); }
+else setUdpStatus('off', 'Not configured');
+
+</script>
+</body>
+</html>

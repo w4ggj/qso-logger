@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "name": "W4GGJ Amateur Radio Log",
   "short_name": "W4GGJ Log",
-  "description": "Amateur radio QSO logger for W4GGJ / GrumpaGrinch",
+  "description": "Multi-program QSO logger for W4GGJ — POTA, WWFF, SOTA, IOTA, BOTA and more",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#030c04",
-  "theme_color": "#030c04",
+  "background_color": "#090b0d",
+  "theme_color": "#090b0d",
   "icons": [
     {
       "src": "icons/icon-192.png",

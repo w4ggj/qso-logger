@@ -1,53 +1,58 @@
-const CACHE = 'w4ggj-v1';
+/* W4GGJ QSO Logger — Service Worker v3 */
+const CACHE = 'w4ggj-v3';
+
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  'https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@400;700;900&display=swap'
+  'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap'
 ];
 
-// Install: cache all core assets
+/* Install: pre-cache app shell */
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => {
-      return Promise.allSettled(
-        ASSETS.map(url => cache.add(url).catch(() => {}))
-      );
-    }).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(c => Promise.allSettled(ASSETS.map(u => c.add(u).catch(() => {}))))
+      .then(() => self.skipWaiting())
   );
 });
 
-// Activate: clean up old caches
+/* Activate: delete old caches */
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch: cache-first for app assets, network-first for QRZ/external APIs
+/* Fetch strategy:
+   - QRZ / corsproxy / localhost bridge → always network
+   - Everything else → cache-first with network fallback
+*/
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Always go network for QRZ API and corsproxy calls
-  if (url.hostname.includes('qrz.com') || url.hostname.includes('corsproxy.io')) {
-    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
+  const alwaysNetwork = [
+    'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.'
+  ].some(h => url.hostname.includes(h) || url.hostname === h);
+
+  if (alwaysNetwork) {
+    e.respondWith(
+      fetch(e.request).catch(() => new Response('', { status: 503 }))
+    );
     return;
   }
 
-  // Cache-first for everything else (app shell, fonts)
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (response && response.status === 200 && response.type !== 'opaque') {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
+      return fetch(e.request).then(res => {
+        if (res && res.status === 200 && res.type !== 'opaque') {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
         }
-        return response;
+        return res;
       }).catch(() => caches.match('./index.html'));
     })
   );
