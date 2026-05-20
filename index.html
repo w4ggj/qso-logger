@@ -969,9 +969,10 @@ footer {
             <button class="qrz-help-toggle" onclick="toggleQrzHelp()">Setup guide ▾</button>
           </div>
           <div class="qrz-help" id="qrz-help">
-            <strong>Callsign lookup</strong> uses your QRZ username &amp; password.<br>
-            Requires a <span class="warn">QRZ XML Data subscription</span> for full name/grid/QTH lookup.<br><br>
-            Logbook upload is handled by your home server — nothing to configure here.
+            Callsign lookup routes through your <strong>home bridge</strong> — no public proxy needed.<br>
+            The bridge makes a direct connection to QRZ from your PC.<br><br>
+            Requires a <span class="warn">QRZ XML Data subscription</span> for name/grid/QTH lookup.<br>
+            Make sure the bridge URL is set in <strong>UDP Bridge</strong> settings below.
           </div>
 
         </div>
@@ -1408,9 +1409,14 @@ function closePotaDropdown(e) {
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 /* ══════════════════════════════════════════
-/* ════════════════════════════════════════════
-   QRZ — callsign lookup via username + password
-════════════════════════════════════════════ */
+/* ══════════════════════════════════════════
+   QRZ — routed through your home bridge
+   Bridge makes direct server-to-server calls
+   to QRZ — no CORS proxy needed at all.
+   Endpoints used:
+     GET /qrz/auth?user=W4GGJ&pass=XX  → {session}
+     GET /qrz/lookup?session=K&call=XX → {name,grid,...}
+══════════════════════════════════════════ */
 let qrzSession = null;
 let lookupTimer = null;
 
@@ -1436,11 +1442,10 @@ function setQrzStatus(msg, cls) {
   el.className = 'qrz-pill ' + (cls || 'idle');
 }
 
-async function qrzFetch(qrzUrl) {
-  const proxy = `https://corsproxy.io/?url=${encodeURIComponent(qrzUrl)}`;
-  const res = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
-  if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
-  return await res.text();
+function getBridgeBase() {
+  const url = ($('udp-url').value || '').trim();
+  // Strip the /log path to get base: http://localhost:12061
+  return url.replace(/\/log\/?$/, '').replace(/\/$/, '') || 'http://localhost:12061';
 }
 
 async function getQrzSession() {
@@ -1454,28 +1459,25 @@ async function getQrzSession() {
     return null;
   }
 
-  setQrzStatus('Connecting…', 'pending');
+  setQrzStatus('Connecting\u2026', 'pending');
   try {
-    const qrzUrl = 'https://xmldata.qrz.com/xml/current/?username=' + encodeURIComponent(user) +
-                   '&password=' + encodeURIComponent(pass) + '&agent=W4GGJ-QSOLogger';
-    const txt = await qrzFetch(qrzUrl);
+    const base = getBridgeBase();
+    const url  = `${base}/qrz/auth?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
+    const res  = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
 
-    const keyMatch = txt.match(/<Key>([^<]+)<\/Key>/);
-    if (keyMatch) {
-      qrzSession = keyMatch[1];
-      const sub = (txt.match(/<SubExp>([^<]+)<\/SubExp>/) || [])[1] || '';
-      setQrzStatus('● Connected' + (sub ? ' (' + sub + ')' : ''), 'ok');
+    if (data.session) {
+      qrzSession = data.session;
+      const sub  = data.sub || '';
+      setQrzStatus('\u25cf Connected' + (sub ? ` (${sub})` : ''), 'ok');
       return qrzSession;
     }
-
-    // Show EXACTLY what QRZ returned so we can diagnose
-    const errMsg = (txt.match(/<Error>([^<]+)<\/Error>/) || [])[1];
-    const status  = errMsg || 'No session key in response';
-    setQrzStatus('✕ ' + status, 'err');
-    console.warn('[QRZ raw response]', txt);
+    setQrzStatus('\u2715 ' + (data.error || 'Auth failed'), 'err');
     return null;
   } catch (e) {
-    setQrzStatus('✕ ' + e.message, 'err');
+    // If bridge isn't reachable, show a clear message
+    const msg = e.name === 'AbortError' ? 'Bridge timeout' : 'Bridge not running';
+    setQrzStatus('\u2715 ' + msg, 'err');
     return null;
   }
 }
@@ -1494,7 +1496,7 @@ function onCallInput(val) {
   clearTimeout(lookupTimer);
   const badge = $('lookup-badge');
   if (!v || v.length < 3) { badge.className = 'lookup-badge idle'; badge.textContent = 'QRZ'; return; }
-  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
   lookupTimer = setTimeout(() => lookupCallsign(v), 1200);
 }
 
@@ -1528,44 +1530,38 @@ async function lookupCallsign(call) {
   const session = await getQrzSession();
   if (!session) { badge.className = 'lookup-badge fail'; badge.textContent = 'ERR'; return; }
 
-  badge.className = 'lookup-badge busy'; badge.textContent = '…';
+  badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
   try {
-    const qrzUrl = 'https://xmldata.qrz.com/xml/current/?s=' + encodeURIComponent(session) +
-                   '&callsign=' + encodeURIComponent(call);
-    const txt = await qrzFetch(qrzUrl);
+    const base = getBridgeBase();
+    const url  = `${base}/qrz/lookup?session=${encodeURIComponent(session)}&call=${encodeURIComponent(call)}`;
+    const res  = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
 
-    if (txt.includes('Session Timeout') || txt.includes('Invalid session')) {
+    // Session expired — re-auth once and retry
+    if (res.status === 401 && data.session_expired) {
       qrzSession = null;
       const s2 = await getQrzSession();
       if (s2) { lookupCallsign(call); return; }
       badge.className = 'lookup-badge fail'; badge.textContent = 'SESSION'; return;
     }
 
-    const get = tag => { const m = txt.match(new RegExp('<' + tag + '>([^<]*)<\/' + tag + '>', 'i')); return m ? m[1].trim() : ''; };
-    const fname = get('fname'), lname = get('name'),   city    = get('addr2'),
-          state = get('state'), country = get('country'), grid  = get('grid'), dxcc = get('dxcc');
-    const hasData = fname || lname || grid;
-
-    if (hasData) {
-      const fullName = [fname, lname].filter(Boolean).join(' ');
-      if (fullName) { $('inp-name').value = fullName; $('inp-name').classList.add('qrz-filled'); }
-      if (grid) { $('inp-their-grid').value = grid.toUpperCase().slice(0, 6); $('inp-their-grid').classList.add('qrz-filled'); }
-      const loc = [city, state, country].filter(Boolean).join(', ');
+    if (res.ok && (data.name || data.grid)) {
+      if (data.name)  { $('inp-name').value = data.name; $('inp-name').classList.add('qrz-filled'); }
+      if (data.grid)  { $('inp-their-grid').value = data.grid; $('inp-their-grid').classList.add('qrz-filled'); }
+      const loc = [data.city, data.state, data.country].filter(Boolean).join(', ');
       badge.className   = 'lookup-badge ok';
-      badge.textContent = dxcc || '✓';
-      badge.title       = fullName + (loc ? ' — ' + loc : '');
+      badge.textContent = data.dxcc || '\u2713';
+      badge.title       = data.name + (loc ? ' \u2014 ' + loc : '');
       if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
     } else {
-      const errMsg = (txt.match(/<Error>([^<]+)<\/Error>/) || [])[1] || 'Not found';
       badge.className   = 'lookup-badge fail';
       badge.textContent = 'N/F';
-      badge.title       = errMsg;
-      console.warn('[QRZ lookup]', txt);
+      badge.title       = data.error || 'Not found';
     }
   } catch (e) {
     badge.className   = 'lookup-badge fail';
     badge.textContent = 'ERR';
-    badge.title       = e.message;
+    badge.title       = e.name === 'AbortError' ? 'Bridge timeout' : e.message;
   }
 }
 
