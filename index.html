@@ -709,182 +709,95 @@ footer {
 }
 
 /* ══════════════════════════════════════════
-   PIN GATE
+   PIN GATE — simple, same pattern as field notes
 ══════════════════════════════════════════ */
 #pin-gate {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  flex-direction: column;
-  padding: 24px;
-}
-
-.pin-box {
-  background: var(--bg2);
-  border: 1px solid var(--border2);
-  border-radius: 6px;
-  padding: 40px 36px 36px;
-  width: 100%;
-  max-width: 340px;
+  max-width: 360px;
+  margin: 0 auto;
+  padding: 80px 20px 40px;
   text-align: center;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  font-family: var(--ui);
 }
 
-.pin-callsign {
+#pin-gate-title {
   font-family: var(--head);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   font-weight: 900;
   letter-spacing: 0.14em;
   color: var(--amber);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
-.pin-subtitle {
-  font-family: var(--ui);
-  font-size: 0.68rem;
+#pin-gate-sub {
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 32px;
-}
-
-.pin-dots {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
   margin-bottom: 28px;
-  height: 14px;
-  align-items: center;
 }
 
-.pin-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--border2);
-  background: transparent;
-  transition: all 0.15s;
+#pin-input {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 1.5rem;
+  letter-spacing: 0.4em;
+  padding: 12px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--bg2);
+  color: var(--text);
+  font-family: var(--mono);
+  outline: none;
+  margin-bottom: 12px;
+  color-scheme: light;
 }
 
-.pin-dot.filled {
-  background: var(--amber);
+#pin-input:focus {
   border-color: var(--amber);
+  box-shadow: 0 0 0 2px var(--amber-soft);
 }
 
-.pin-dot.error {
-  background: var(--red);
-  border-color: var(--red);
-}
-
-.pin-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+#pin-unlock-btn {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  background: var(--amber);
+  border: none;
+  border-radius: var(--r);
+  color: #ffffff;
+  font-family: var(--ui);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
   margin-bottom: 10px;
 }
 
-.pin-key {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-family: var(--head);
-  font-size: 1.1rem;
-  font-weight: 600;
-  padding: 16px 8px;
-  cursor: pointer;
-  transition: all 0.1s;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
+#pin-unlock-btn:hover { background: var(--amber-dim); }
 
-.pin-key:hover  { background: var(--bg4); border-color: var(--border3); }
-.pin-key:active { background: var(--amber-soft); border-color: var(--amber-dim); color: var(--amber); transform: scale(0.96); }
-
-.pin-key.wide {
-  grid-column: span 2;
+#pin-err {
+  color: var(--red);
   font-size: 0.7rem;
-  font-family: var(--ui);
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  color: var(--muted);
-}
-
-.pin-key.submit {
-  background: var(--amber);
-  border-color: var(--amber);
-  color: #fff;
-  font-size: 0.75rem;
-  font-family: var(--ui);
-  font-weight: 700;
-  letter-spacing: 0.15em;
-}
-
-.pin-key.submit:hover  { background: var(--amber-dim); }
-.pin-key.submit:active { transform: scale(0.96); }
-
-.pin-error-msg {
-  font-family: var(--ui);
-  font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--red);
-  height: 18px;
-  margin-top: 8px;
-  transition: opacity 0.2s;
-  opacity: 0;
+  display: none;
+  margin-top: 6px;
 }
-
-.pin-error-msg.show { opacity: 1; }
-
-@keyframes pin-shake {
-  0%,100% { transform: translateX(0); }
-  20%      { transform: translateX(-8px); }
-  40%      { transform: translateX(8px); }
-  60%      { transform: translateX(-6px); }
-  80%      { transform: translateX(6px); }
-}
-.pin-shake { animation: pin-shake 0.4s ease; }
 </style>
 </head>
 <body>
 
 <!-- ═════════════ PIN GATE ═════════════ -->
 <div id="pin-gate">
-  <div class="pin-box">
-    <div class="pin-callsign">W4GGJ</div>
-    <div class="pin-subtitle">QSO Logger &nbsp;·&nbsp; Enter PIN</div>
-
-    <div class="pin-dots" id="pin-dots">
-      <div class="pin-dot" id="pd0"></div>
-      <div class="pin-dot" id="pd1"></div>
-      <div class="pin-dot" id="pd2"></div>
-      <div class="pin-dot" id="pd3"></div>
-    </div>
-
-    <div class="pin-pad">
-      <button class="pin-key" onclick="pinKey('1')">1</button>
-      <button class="pin-key" onclick="pinKey('2')">2</button>
-      <button class="pin-key" onclick="pinKey('3')">3</button>
-      <button class="pin-key" onclick="pinKey('4')">4</button>
-      <button class="pin-key" onclick="pinKey('5')">5</button>
-      <button class="pin-key" onclick="pinKey('6')">6</button>
-      <button class="pin-key" onclick="pinKey('7')">7</button>
-      <button class="pin-key" onclick="pinKey('8')">8</button>
-      <button class="pin-key" onclick="pinKey('9')">9</button>
-      <button class="pin-key wide" onclick="pinClear()">CLR</button>
-      <button class="pin-key" onclick="pinKey('0')">0</button>
-      <button class="pin-key submit" onclick="pinSubmit()">GO</button>
-    </div>
-
-    <div class="pin-error-msg" id="pin-err">Incorrect PIN</div>
-  </div>
+  <div id="pin-gate-title">W4GGJ</div>
+  <div id="pin-gate-sub">QSO Logger &mdash; Enter PIN to continue</div>
+  <input type="password" id="pin-input" placeholder="&bull;&bull;&bull;&bull;">
+  <div id="pin-unlock-btn" role="button" tabindex="0" onclick="checkPin()">UNLOCK</div>
+  <div id="pin-err">Incorrect PIN</div>
 </div>
 
 <!-- App (hidden until PIN unlocked) -->
@@ -1163,85 +1076,27 @@ footer {
 'use strict';
 
 /* ══════════════════════════════════════════
-   PIN GATE
-   Change PIN_HASH to lock the app.
-   To generate a new hash, run in browser console:
-     crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourpin'))
-       .then(b => console.log([...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')))
-   Default PIN: 7300  (73 — the ham radio sign-off)
+   PIN GATE — plain text compare, same as field notes
+   Change QSO_PIN below to set your PIN.
 ══════════════════════════════════════════ */
-const PIN_HASH = 'a6c4e3b6f6a78fa89b61bc42e40d5e9fccde4fc8f3b1e54e1d0c9f7a5b2e8c1'; // SHA-256 of '7300'
-const SESSION_KEY = 'w4ggj_pin_ok';
+var QSO_PIN = '7300';
 
-let pinBuffer = '';
-
-async function hashPin(pin) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
-  return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
-}
-
-function pinKey(digit) {
-  if (pinBuffer.length >= 4) return;
-  pinBuffer += digit;
-  updatePinDots();
-  if (pinBuffer.length === 4) pinSubmit();
-}
-
-function pinClear() {
-  pinBuffer = pinBuffer.slice(0, -1);
-  updatePinDots();
-  // Clear error when user starts correcting
-  const err = document.getElementById('pin-err');
-  err.classList.remove('show');
-  for (let i = 0; i < 4; i++) {
-    document.getElementById(`pd${i}`).classList.remove('error');
-  }
-}
-
-function updatePinDots(state) {
-  for (let i = 0; i < 4; i++) {
-    const dot = document.getElementById(`pd${i}`);
-    dot.classList.remove('filled', 'error');
-    if (state === 'error') { dot.classList.add('error'); }
-    else if (i < pinBuffer.length) { dot.classList.add('filled'); }
-  }
-}
-
-async function pinSubmit() {
-  if (pinBuffer.length === 0) return;
-  const hash = await hashPin(pinBuffer);
-  if (hash === PIN_HASH) {
-    sessionStorage.setItem(SESSION_KEY, '1');
-    document.getElementById('pin-gate').style.display = 'none';
-    document.getElementById('app-wrap').style.display = 'block';
+function checkPin() {
+  var val = document.getElementById('pin-input').value;
+  if (val === QSO_PIN) {
+    document.getElementById('pin-gate').style.display    = 'none';
+    document.getElementById('app-wrap').style.display    = 'block';
     document.getElementById('inp-call').focus();
   } else {
-    updatePinDots('error');
-    document.getElementById('pin-err').classList.add('show');
-    document.getElementById('pin-box-anim')?.classList.add('pin-shake');
-    document.querySelector('.pin-box').classList.add('pin-shake');
-    setTimeout(() => {
-      pinBuffer = '';
-      updatePinDots();
-      document.querySelector('.pin-box').classList.remove('pin-shake');
-    }, 500);
+    document.getElementById('pin-err').style.display = 'block';
+    document.getElementById('pin-input').value = '';
+    document.getElementById('pin-input').focus();
   }
 }
 
-// Keyboard support for PIN entry
-document.addEventListener('keydown', e => {
-  // Only intercept if gate is visible
-  if (document.getElementById('pin-gate').style.display === 'none') return;
-  if (e.key >= '0' && e.key <= '9') pinKey(e.key);
-  else if (e.key === 'Backspace') pinClear();
-  else if (e.key === 'Enter') pinSubmit();
+document.getElementById('pin-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') checkPin();
 });
-
-// Check if already unlocked this session
-if (sessionStorage.getItem(SESSION_KEY) === '1') {
-  document.getElementById('pin-gate').style.display = 'none';
-  document.getElementById('app-wrap').style.display = 'block';
-}
 
 /* ─── State ─── */
 let log = JSON.parse(localStorage.getItem('w4ggj_log') || '[]');
