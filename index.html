@@ -969,10 +969,12 @@ footer {
             <button class="qrz-help-toggle" onclick="toggleQrzHelp()">Setup guide ▾</button>
           </div>
           <div class="qrz-help" id="qrz-help">
-            Callsign lookup routes through your <strong>home bridge</strong> — no public proxy needed.<br>
-            The bridge makes a direct connection to QRZ from your PC.<br><br>
-            Requires a <span class="warn">QRZ XML Data subscription</span> for name/grid/QTH lookup.<br>
-            Make sure the bridge URL is set in <strong>UDP Bridge</strong> settings below.
+            Callsign lookup routes through your <strong>home bridge</strong>.<br>
+            The bridge makes a direct connection to QRZ — no proxy needed.<br><br>
+            <strong>If TEST shows "Bridge needs restart":</strong> you need to replace
+            <code style="font-family:monospace;font-size:0.85em">udp_cloner_with_adif.py</code>
+            with the latest version and restart it — the QRZ endpoints were added in the last update.<br><br>
+            Requires a <span class="warn">QRZ XML Data subscription</span> for lookups.
           </div>
 
         </div>
@@ -1444,8 +1446,10 @@ function setQrzStatus(msg, cls) {
 
 function getBridgeBase() {
   const url = ($('udp-url').value || '').trim();
-  // Strip the /log path to get base: http://localhost:12061
-  return url.replace(/\/log\/?$/, '').replace(/\/$/, '') || 'http://localhost:12061';
+  // Strip /log to get base URL. Replace localhost → 127.0.0.1 to avoid IPv6 issues.
+  return url.replace(/\/log\/?$/, '').replace(/\/$/, '')
+            .replace('localhost', '127.0.0.1')
+         || 'http://127.0.0.1:12061';
 }
 
 async function getQrzSession() {
@@ -1460,29 +1464,59 @@ async function getQrzSession() {
   }
 
   setQrzStatus('Connecting\u2026', 'pending');
-  try {
-    const base = getBridgeBase();
-    const url  = `${base}/qrz/auth?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
-    const res  = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const data = await res.json();
+  const base = getBridgeBase();
 
+  try {
+    const url = `${base}/qrz/auth?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+
+    // Handle non-JSON response (old bridge version without /qrz/auth endpoint)
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+      setQrzStatus(`\u2715 Bridge needs restart (HTTP ${res.status})`, 'err');
+      return null;
+    }
+
+    const data = await res.json();
     if (data.session) {
       qrzSession = data.session;
-      const sub  = data.sub || '';
+      const sub = data.sub || '';
       setQrzStatus('\u25cf Connected' + (sub ? ` (${sub})` : ''), 'ok');
       return qrzSession;
     }
     setQrzStatus('\u2715 ' + (data.error || 'Auth failed'), 'err');
     return null;
   } catch (e) {
-    // If bridge isn't reachable, show a clear message
-    const msg = e.name === 'AbortError' ? 'Bridge timeout' : 'Bridge not running';
-    setQrzStatus('\u2715 ' + msg, 'err');
+    if (e.name === 'AbortError') {
+      setQrzStatus('\u2715 Bridge timeout — is it running?', 'err');
+    } else {
+      // Show actual error + the URL we tried so user can debug
+      setQrzStatus(`\u2715 Can't reach ${base}`, 'err');
+      console.warn('[QRZ] fetch error:', e.message, 'URL tried:', base);
+    }
     return null;
   }
 }
 
-async function testQrz() { qrzSession = null; await getQrzSession(); }
+// testQrz: health-check the bridge first, then authenticate
+async function testQrz() {
+  qrzSession = null;
+  const base = getBridgeBase();
+  setQrzStatus('Checking bridge\u2026', 'pending');
+  try {
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Bridge is up — now do QRZ auth
+    await getQrzSession();
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      setQrzStatus(`\u2715 No response from ${base}`, 'err');
+    } else {
+      setQrzStatus(`\u2715 Bridge unreachable: ${base}`, 'err');
+      console.warn('[QRZ] bridge health check failed:', e.message);
+    }
+  }
+}
 
 function toggleQrzHelp() {
   const h = $('qrz-help');
