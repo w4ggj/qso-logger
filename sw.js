@@ -1,4 +1,18 @@
 /* W4GGJ QSO Logger — Service Worker v3 */
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+
+  // Never intercept POST/PUT/DELETE — pass straight through
+  if (e.request.method !== 'GET') {
+    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
+    return;
+  }
+
+  const alwaysNetwork = [
+    'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.'
+  ].some(h => url.hostname.includes(h) || url.hostname === h);
+  // ... rest unchanged
+  
 const CACHE = 'w4ggj-v3';
 
 const ASSETS = [
