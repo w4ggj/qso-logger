@@ -8,9 +8,9 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  const alwaysNetwork = [
-    'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.'
-  ].some(h => url.hostname.includes(h) || url.hostname === h);
+const alwaysNetwork = [
+    'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.', 'grumpagrinch.com'
+].some(h => url.hostname.includes(h) || url.hostname === h);
   // ... rest unchanged
   
 const CACHE = 'w4ggj-v3';
