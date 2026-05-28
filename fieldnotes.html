@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TavaOne // Field Notes</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+
+  <style>
+    /* --- Master Layout Theme System --- */
+    :root {
+      --bg-main: #0f172a;
+      --bg-card: #1e293b;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #10b981;
+      --banner-green: #1a7a32;
+      --accent-purple: #a855f7;
+      --accent-blue: #3b82f6;
+      --warning-amber: #f59e0b;
+      --danger-red: #ef4444;
+      --fn-radius: 8px;
+      --fn-mono: 'Space Mono', monospace;
+      --fn-sans: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    html, body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: var(--fn-sans);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Primary Wrapper Flex Framework to force footer to the absolute bottom */
+    .app-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    #fn-pin-gate, #fn-main {
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 40px 20px 60px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    #fn-pin-gate {
+      max-width: 420px;
+      text-align: center;
+      padding-top: 120px;
+    }
+
+    /* ── Styled Branding Headers ── */
+    .tava-logo-header {
+      font-family: var(--fn-mono);
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.04em;
+      text-transform: uppercase;
+    }
+    .tava-w { color: #ffffff; }
+    .tava-g { color: var(--accent-green); }
+
+    /* ── PIN gate ── */
+    #fn-pin-input {
+      width: 100%;
+      text-align: center;
+      font-size: 24px;
+      letter-spacing: 0.3em;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--fn-radius);
+      background-color: var(--bg-card);
+      color: var(--text-main);
+      font-family: var(--fn-mono);
+      outline: none;
+      margin-bottom: 16px;
+      color-scheme: dark;
+      display: block;
+    }
+
+    #fn-unlock-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      background: var(--banner-green);
+      border: none;
+      border-radius: 6px;
+      color: #ffffff;
+      font-family: var(--fn-mono);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      line-height: 1.4;
+      transition: opacity 0.2s ease;
+    }
+
+    #fn-unlock-btn:hover {
+      opacity: 0.85;
+    }
+
+    #fn-pin-err {
+      color: var(--danger-red);
+      font-size: 12px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    /* ── Header ── */
+    .fn-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .fn-header-icon {
+      width: 42px;
+      height: 42px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--accent-green);
+      border-radius: var(--fn-radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-green);
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .fn-header p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .fn-callsign {
+      margin-left: auto;
+      font-family: var(--fn-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-green);
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--accent-green);
+      padding: 4px 10px;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
+
+    /* ── Sections ── */
+    .fn-section {
+      margin-bottom: 28px;
+    }
+
+    .fn-section-title {
+      font-family: var(--fn-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .fn-section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    /* ── Fields ── */
+    .fn-field {
+      margin-bottom: 14px;
+    }
+
+    .fn-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .fn-label span {
+      color: var(--danger-red);
+      margin-left: 2px;
+    }
+
+    input[type="text"],
+    textarea,
+    select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--fn-radius);
+      color: var(--text-main);
+      font-family: var(--fn-sans);
+      font-size: 14px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      color-scheme: dark;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent-green);
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 72px;
+    }
+
+    /* ── Ref row ── */
+    .fn-ref-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .fn-ref-input-wrap {
+      position: relative;
+      flex: 1;
+    }
+
+    .fn-ref-input-wrap input {
+      font-family: var(--fn-mono) !important;
+      font-weight: 700 !important;
+      font-size: 15px !important;
+      letter-spacing: 0.04em !important;
+      text-transform: uppercase !important;
+      padding-right: 40px !important;
+    }
+
+    .fn-ref-status {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 16px;
+      display: none;
+    }
+
+    .fn-ref-status.loading {
+      display: block;
+      color: var(--text-muted);
+      animation: fn-spin 1s linear infinite;
+    }
+
+    .fn-ref-status.ok {
+      display: block;
+      color: var(--accent-green);
+    }
+
+    .fn-ref-status.err {
+      display: block;
+      color: var(--danger-red);
+    }
+
+    @keyframes fn-spin {
+      to { transform: translateY(-50%) rotate(360deg); }
+    }
+
+    .fn-program-badge {
+      font-family: var(--fn-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 4px 9px;
+      border-radius: 4px;
+      border: 1px solid;
+      white-space: nowrap;
+      align-self: center;
+      display: none;
+    }
+
+    .fn-program-badge.show { display: block; }
+    .fn-program-badge.pota { color: var(--accent-blue); border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.1); }
+    .fn-program-badge.sota { color: var(--accent-purple); border-color: rgba(168, 85, 247, 0.4); background: rgba(168, 85, 247, 0.1); }
+    .fn-program-badge.wwff { color: var(--accent-green); border-color: rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.1); }
+    .fn-program-badge.iota { color: var(--warning-amber); border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.1); }
+    .fn-program-badge.bota { color: var(--accent-blue); border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.1); }
+    .fn-program-badge.unknown { color: var(--text-muted); border-color: var(--border-color); background: rgba(255, 255, 255, 0.05); }
+
+    .fn-noref-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      cursor: pointer;
+      width: fit-content;
+    }
+
+    .fn-noref-toggle input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--accent-green);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .fn-noref-toggle span {
+      font-size: 12px;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    .fn-lookup-result {
+      font-size: 11px;
+      margin-top: 4px;
+      padding: 5px 10px;
+      border-radius: 5px;
+      display: none;
+    }
+
+    .fn-lookup-result.ok { display: block; background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .fn-lookup-result.warn { display: block; background: rgba(245, 158, 11, 0.1); color: var(--warning-amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .fn-lookup-result.err { display: block; background: rgba(239, 68, 68, 0.1); color: var(--danger-red); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    /* ── Folder preview ── */
+    .fn-folder-preview {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--fn-radius);
+      padding: 10px 14px;
+      margin-bottom: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 40px;
+    }
+
+    .fn-folder-preview i { color: var(--warning-amber); font-size: 16px; flex-shrink: 0; }
+    .fn-folder-name { font-family: var(--fn-mono); font-size: 12px; color: var(--text-main); flex: 1; word-break: break-all; }
+    .fn-folder-name.placeholder { color: var(--text-muted); font-style: italic; }
+
+    /* ── Grid ── */
+    .fn-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 480px) {
+      .fn-grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* ── Shot list ── */
+    .fn-shots {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--fn-radius);
+      overflow: hidden;
+    }
+
+    .fn-shots-phase {
+      padding: 8px 14px;
+      font-family: var(--fn-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(15, 23, 42, 0.6);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .fn-shot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-color);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .fn-shot:last-child { border-bottom: none; }
+    .fn-shot:hover { background: rgba(255, 255, 255, 0.05); }
+    .fn-shot input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent-green); cursor: pointer; flex-shrink: 0; }
+    .fn-shot-label { font-size: 13px; color: var(--text-main); flex: 1; transition: color 0.1s; }
+    .fn-shot.checked .fn-shot-label { color: var(--text-muted); text-decoration: line-through; }
+    .fn-shot-opt { font-size: 10px; color: var(--text-muted); font-style: italic; }
+
+    /* ── Progress ── */
+    .fn-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .fn-progress-bar { flex: 1; height: 4px; background: var(--border-color); border-radius: 2px; overflow: hidden; }
+    .fn-progress-fill { height: 100%; background: var(--accent-green); border-radius: 2px; transition: width 0.3s ease; width: 0%; }
+    .fn-progress-text { font-family: var(--fn-mono); font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+    /* ── Rating ── */
+    .fn-rating { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .fn-rating-btn {
+      display: block;
+      width: 100%;
+      padding: 12px 4px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-family: var(--fn-mono);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      line-height: 1.4;
+      min-width: 0;
+      user-select: none;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .fn-rating-btn:hover, .fn-rating-btn.active {
+      background: rgba(16, 185, 129, 0.1);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+
+    /* ── Activate again ── */
+    .fn-again { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .fn-again-btn {
+      display: block;
+      width: 100%;
+      padding: 14px 4px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-muted);
+      font-family: var(--fn-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      text-align: center;
+      line-height: 1.4;
+      min-width: 0;
+      user-select: none;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .fn-again-btn[data-v="YES"]:hover,   .fn-again-btn[data-v="YES"].active   { background: rgba(16, 185, 129, 0.1); border-color: var(--accent-green); color: var(--accent-green); }
+    .fn-again-btn[data-v="NO"]:hover,    .fn-again-btn[data-v="NO"].active    { background: rgba(239, 68, 68, 0.1); border-color: var(--danger-red); color: var(--danger-red); }
+    .fn-again-btn[data-v="MAYBE"]:hover, .fn-again-btn[data-v="MAYBE"].active { background: rgba(245, 158, 11, 0.1); border-color: var(--warning-amber); color: var(--warning-amber); }
+
+    /* ── Save button ── */
+    .fn-save-btn {
+      display: block;
+      width: 100%;
+      padding: 16px;
+      background: var(--banner-green);
+      border: 2px solid var(--banner-green);
+      border-radius: 6px;
+      color: #ffffff;
+      font-family: var(--fn-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      line-height: 1.4;
+      margin-top: 28px;
+      text-transform: uppercase;
+      text-align: center;
+      user-select: none;
+      transition: opacity 0.15s;
+    }
+
+    .fn-save-btn:hover { opacity: 0.88; }
+    .fn-save-btn:active { opacity: 0.75; }
+    .fn-save-btn.fn-disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status ── */
+    .fn-status { margin-top: 12px; padding: 10px 14px; border-radius: var(--fn-radius); font-size: 13px; display: none; align-items: center; gap: 8px; }
+    .fn-status.ok { background: rgba(16, 185, 129, 0.1); border: 1px solid var(--accent-green); color: var(--accent-green); display: flex; }
+    .fn-status.err { background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger-red); color: var(--danger-red); display: flex; }
+
+    /* --- Site Footer Layout Area --- */
+    .site-footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2rem 1.5rem;
+      background-color: rgba(15, 23, 42, 0.4);
+      text-align: center;
+      font-family: var(--fn-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+      color: var(--text-muted);
+      margin-top: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="app-wrapper">
+    <div id="fn-pin-gate">
+      <div class="tava-logo-header">
+        <span class="tava-w">Tava</span><span class="tava-g">One</span> <span class="tava-w">// Field</span> <span class="tava-g">Notes</span>
+      </div>
+      <div style="font-size:13px; color:var(--text-muted); margin-bottom:24px;">Private Activation Tool &mdash; Enter PIN to continue</div>
+      <input type="password" id="fn-pin-input" placeholder="••••">
+      <div id="fn-unlock-btn" role="button" tabindex="0" onclick="fnCheckPin()">UNLOCK</div>
+      <div id="fn-pin-err">Incorrect PIN</div>
+    </div>
+
+    <div id="fn-main" style="display:none;">
+
+      <div class="fn-header">
+        <div class="fn-header-icon"><i class="ti ti-radio"></i></div>
+        <div>
+          <div class="tava-logo-header" style="font-size:20px; margin-bottom:2px;">
+            <span class="tava-w">Tava</span><span class="tava-g">One</span> <span class="tava-w">// Field</span> <span class="tava-g">Notes</span>
+          </div>
+          <p>Activation log &mdash; saves to Google Drive</p>
+        </div>
+        <div class="fn-callsign">W4GGJ</div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-map-pin" style="font-size:12px"></i> Activation Details</div>
+
+        <div class="fn-field">
+          <label class="fn-label">Reference ID <span>*</span></label>
+          <div class="fn-ref-row">
+            <div class="fn-ref-input-wrap">
+              <input type="text" id="fn-ref" placeholder="e.g. US-6700 · KFF-6744" autocomplete="off" spellcheck="false">
+              <i class="fn-ref-status ti ti-loader-2" id="fn-ref-spinner"></i>
+            </div>
+            <div class="fn-program-badge" id="fn-program-badge"></div>
+          </div>
+          <div class="fn-lookup-result" id="fn-lookup-result"></div>
+          <label class="fn-noref-toggle">
+            <input type="checkbox" id="fn-noref">
+            <span>No reference number (scouting, portable ops, unregistered site)</span>
+          </label>
+        </div>
+
+        <div class="fn-field">
+          <label class="fn-label" for="fn-park">Park / Site Name <span>*</span></label>
+          <input type="text" id="fn-park" placeholder="Auto-fills from reference, or type manually">
+        </div>
+
+        <div class="fn-grid-2">
+          <div class="fn-field">
+            <label class="fn-label" for="fn-date">Date <span>*</span></label>
+            <input type="text" id="fn-date" placeholder="YYYY-MM-DD" autocomplete="off" inputmode="numeric" style="font-family:var(--fn-mono);">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label">Drive Folder</label>
+            <div class="fn-folder-preview">
+              <i class="ti ti-folder"></i>
+              <span class="fn-folder-name placeholder" id="fn-folder-preview">Fill in details above</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-device-laptop" style="font-size:12px"></i> Equipment</div>
+        <div class="fn-grid-2">
+          <div class="fn-field">
+            <label class="fn-label" for="fn-radio">Radio</label>
+            <input type="text" id="fn-radio" value="Xiegu X6200">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-antenna">Antenna</label>
+            <input type="text" id="fn-antenna" value="Radioddity HF-010">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-band">Band / Mode</label>
+            <input type="text" id="fn-band" placeholder="e.g. 20m FT8">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-power">Power</label>
+            <input type="text" id="fn-power" value="5W">
+          </div>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-other-gear">Other Gear</label>
+          <input type="text" id="fn-other-gear" value="DigiPi, Android tablet, NanoVNA">
+        </div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-cloud" style="font-size:12px"></i> Conditions</div>
+        <div class="fn-grid-2">
+          <div class="fn-field">
+            <label class="fn-label" for="fn-weather">Weather</label>
+            <input type="text" id="fn-weather" placeholder="Type manually">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-swr">SWR</label>
+            <input type="text" id="fn-swr" placeholder="e.g. 1.053">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-setup-time">Setup Time (min)</label>
+            <input type="text" id="fn-setup-time" placeholder="e.g. 25">
+          </div>
+          <div class="fn-field">
+            <label class="fn-label" for="fn-on-air">On Air Time</label>
+            <input type="text" id="fn-on-air" placeholder="e.g. 1338 EST">
+          </div>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-antenna-notes">Antenna Setup Notes</label>
+          <textarea id="fn-antenna-notes" rows="2" placeholder="Location, obstructions, radials, SWR notes..."></textarea>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-technical">Technical Issues</label>
+          <textarea id="fn-technical" rows="2" placeholder="Any problems encountered..."></textarea>
+        </div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-camera" style="font-size:12px"></i> Shot List</div>
+        <div class="fn-progress">
+          <div class="fn-progress-bar"><div class="fn-progress-fill" id="fn-progress-fill"></div></div>
+          <span class="fn-progress-text" id="fn-progress-text">0 / 17</span>
+        </div>
+        <div class="fn-shots">
+          <div class="fn-shots-phase">Before You Start</div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Arrive — park entrance or sign"><span class="fn-shot-label">Arrive &mdash; park entrance or sign</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Operating spot — wide pre-setup"><span class="fn-shot-label">Operating spot &mdash; wide pre-setup</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Gear laid out before setup"><span class="fn-shot-label">Gear laid out before setup</span></div>
+          <div class="fn-shots-phase">During Setup</div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Antenna going up, radials out"><span class="fn-shot-label">Antenna going up, radials out</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Cable connections close-up"><span class="fn-shot-label">Cable connections close-up</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Power on — X6200 display + voltmeter"><span class="fn-shot-label">Power on &mdash; X6200 display + voltmeter</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="WSJT-X running — waterfall with signals"><span class="fn-shot-label">WSJT-X running &mdash; waterfall with signals</span></div>
+          <div class="fn-shots-phase">During Activation</div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="First contact — screen at QSO complete"><span class="fn-shot-label">First contact &mdash; screen at QSO complete</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Full station — wide shot"><span class="fn-shot-label">Full station &mdash; wide shot</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Park b-roll — wildlife, water, trees"><span class="fn-shot-label">Park b-roll &mdash; wildlife, water, trees</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Contact count — QSO total building"><span class="fn-shot-label">Contact count &mdash; QSO total building</span></div>
+          <div class="fn-shots-phase">Pack-Up</div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Final count — hold screen 3+ sec"><span class="fn-shot-label">Final count &mdash; hold screen 3+ sec</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Teardown — radials coiled, antenna down"><span class="fn-shot-label">Teardown &mdash; radials coiled, antenna down</span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Sign-off — wide park view from spot"><span class="fn-shot-label">Sign-off &mdash; wide park view from spot</span></div>
+          <div class="fn-shots-phase">Optional</div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Talking to camera (optional)"><span class="fn-shot-label">Talking to camera <span class="fn-shot-opt">optional</span></span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Slow-mo antenna/coax (optional)"><span class="fn-shot-label">Slow-mo antenna/coax <span class="fn-shot-opt">optional</span></span></div>
+          <div class="fn-shot" onclick="toggleShot(this)"><input type="checkbox" data-shot="Thumbnail still (optional)"><span class="fn-shot-label">Thumbnail still <span class="fn-shot-opt">optional</span></span></div>
+        </div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-notes" style="font-size:12px"></i> Notes</div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-moments">Memorable Moments</label>
+          <textarea id="fn-moments" rows="2" placeholder="What stood out..."></textarea>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-gear-perf">Gear Performance</label>
+          <textarea id="fn-gear-perf" rows="2" placeholder="How did the gear perform..."></textarea>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label" for="fn-content">Content Ideas</label>
+          <textarea id="fn-content" rows="2" placeholder="TikTok hooks, blog angles, footage ideas..."></textarea>
+        </div>
+      </div>
+
+      <div class="fn-section">
+        <div class="fn-section-title"><i class="ti ti-star" style="font-size:12px"></i> Review</div>
+        <div class="fn-field">
+          <label class="fn-label">Activate Again?</label>
+          <div class="fn-again">
+            <div class="fn-again-btn" role="button" tabindex="0" data-v="YES" onclick="selectAgain(this)">YES</div>
+            <div class="fn-again-btn" role="button" tabindex="0" data-v="NO" onclick="selectAgain(this)">NO</div>
+            <div class="fn-again-btn" role="button" tabindex="0" data-v="MAYBE" onclick="selectAgain(this)">MAYBE</div>
+          </div>
+        </div>
+        <div class="fn-field">
+          <label class="fn-label">Rating</label>
+          <div class="fn-rating">
+            <div class="fn-rating-btn" role="button" tabindex="0" data-r="1" onclick="selectRating(this)">1</div>
+            <div class="fn-rating-btn" role="button" tabindex="0" data-r="2" onclick="selectRating(this)">2</div>
+            <div class="fn-rating-btn" role="button" tabindex="0" data-r="3" onclick="selectRating(this)">3</div>
+            <div class="fn-rating-btn" role="button" tabindex="0" data-r="4" onclick="selectRating(this)">4</div>
+            <div class="fn-rating-btn" role="button" tabindex="0" data-r="5" onclick="selectRating(this)">5</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fn-save-btn" id="fn-save-btn" role="button" tabindex="0">Save to Google Drive</div>
+      <div class="fn-status" id="fn-status"></div>
+
+    </div>
+    
+    <footer class="site-footer">
+      <div>&copy; 2026 Tava One LLC // W4GGJ. All Rights Reserved.</div>
+    </footer>
+  </div>
+
+  <script>
+    // ── Config Metrics ──
+    var FN_PIN       = '7300';
+    var BLOG_FOLDER_ID   = '18Sy7ZMRykxygrYScFKxpkI0W9Wmmwrtu';
+    var FN_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwlChOoHFxs3czldcJ7tfP5HwV7EdKDwb4O_bVrD7e-29btCGz6HQlot_rs3EHYong/exec';
+
+    // ── PIN gate Engine ──
+    function fnCheckPin() {
+      var val = document.getElementById('fn-pin-input').value;
+      if (val === FN_PIN) {
+        document.getElementById('fn-pin-gate').style.display = 'none';
+        document.getElementById('fn-main').style.display     = 'block';
+        
+        var today = new Date();
+        var yy  = String(today.getFullYear());
+        var mm  = String(today.getMonth() + 1).padStart(2,'0');
+        var dd  = String(today.getDate()).padStart(2,'0');
+        document.getElementById('fn-date').value = yy + '-' + mm + '-' + dd;
+        updateFolderPreview();
+      } else {
+        document.getElementById('fn-pin-err').style.display = 'block';
+        document.getElementById('fn-pin-input').value = '';
+      }
+    }
+    document.getElementById('fn-pin-input').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') fnCheckPin();
+    });
+
+    // ── Form State Variables ──
+    var selectedRating   = '';
+    var selectedAgain    = '';
+    var lookupDebounce   = null;
+    var detectedProgram  = '';
+
+    function selectRating(element) {
+      document.querySelectorAll('.fn-rating-btn').forEach(function(b){ b.classList.remove('active'); });
+      element.classList.add('active');
+      selectedRating = element.dataset.r;
+    }
+
+    function selectAgain(element) {
+      document.querySelectorAll('.fn-again-btn').forEach(function(b){ b.classList.remove('active'); });
+      element.classList.add('active');
+      selectedAgain = element.dataset.v;
+    }
+
+    function toggleShot(element) {
+      var cb = element.querySelector('input[type="checkbox"]');
+      cb.checked = !cb.checked;
+      element.classList.toggle('checked', cb.checked);
+      updateProgress();
+    }
+
+    function updateProgress() {
+      var boxes = document.querySelectorAll('.fn-shots input[type="checkbox"]');
+      var done  = Array.from(boxes).filter(function(b){ return b.checked; }).length;
+      var pct   = boxes.length ? (done / boxes.length * 100) : 0;
+      document.getElementById('fn-progress-fill').style.width = pct + '%';
+      document.getElementById('fn-progress-text').textContent = done + ' / ' + boxes.length;
+    }
+
+    // ── Naming and Slug Generation Logic ──
+    function folderSlug(str) {
+      return str.trim().toLowerCase()
+        .replace(/[^a-z0-9\-]+/g,'-')
+        .replace(/-+/g,'-').replace(/^-|-$/g,'');
+    }
+
+    function getDatePrefix() {
+      var d = document.getElementById('fn-date').value;
+      if (!d) return '';
+      return d.replace(/-/g,'').slice(2); // YYMMDD
+    }
+
+    function updateFolderPreview() {
+      var noRef  = document.getElementById('fn-noref').checked;
+      var ref    = document.getElementById('fn-ref').value.trim().toUpperCase();
+      var park   = document.getElementById('fn-park').value.trim();
+      var prefix = getDatePrefix();
+      var el     = document.getElementById('fn-folder-preview');
+      var name   = '';
+
+      if (noRef) {
+        name = (prefix && park) ? prefix + ' ' + folderSlug(park) : '';
+      } else {
+        name = (prefix && ref) ? prefix + ' ' + ref.toLowerCase().replace(/[\/\-]/g,'') : '';
+      }
+
+      if (name) {
+        el.textContent = name;
+        el.classList.remove('placeholder');
+      } else {
+        el.textContent = 'Fill in details above';
+        el.classList.add('placeholder');
+      }
+      return name;
+    }
+
+    // ── Program Match Filters ──
+    function detectProgram(ref) {
+      ref = ref.trim().toUpperCase();
+      if (!ref) return '';
+      if (/^[A-Z0-9]+\/[A-Z0-9]+-\d+$/.test(ref))  return 'SOTA';
+      if (/^[A-Z]{2,6}FF-\d+$/.test(ref))           return 'WWFF';
+      if (/^(NA|EU|AS|AF|OC|SA|AN)-\d{3}$/.test(ref)) return 'IOTA';
+      if (/^K[A-Z]{0,2}-\d{4}$/.test(ref) && !ref.startsWith('KFF')) return 'BOTA';
+      if (/^[A-Z0-9]+-\d+$/.test(ref))              return 'POTA';
+      return 'UNKNOWN';
+    }
+
+    function setProgramBadge(program) {
+      detectedProgram = program;
+      var badge = document.getElementById('fn-program-badge');
+      var labels = {POTA:'POTA',SOTA:'SOTA',WWFF:'WWFF',IOTA:'IOTA',BOTA:'BOTA',UNKNOWN:'?'};
+      if (!program) { badge.classList.remove('show'); return; }
+      badge.textContent = labels[program] || program;
+      badge.className   = 'fn-program-badge show ' + program.toLowerCase();
+    }
+
+    // ── Active Data Sync API Lookups ──
+    async function lookupRef(ref) {
+      var program = detectProgram(ref);
+      setProgramBadge(program);
+      var spinner = document.getElementById('fn-ref-spinner');
+      var result  = document.getElementById('fn-lookup-result');
+      var parkEl  = document.getElementById('fn-park');
+
+      spinner.className = 'fn-ref-status loading ti ti-loader-2';
+      result.className  = 'fn-lookup-result';
+      result.textContent = '';
+
+      try {
+        var name = '';
+        if (program === 'POTA') {
+          var r = await fetch('https://api.pota.app/park/' + encodeURIComponent(ref));
+          if (!r.ok) throw new Error('Not found');
+          var d = await r.json();
+          name = d.name || d.parkName || '';
+        } else if (program === 'SOTA') {
+          var r = await fetch('https://api2.sota.org.uk/api/summits/' + encodeURIComponent(ref));
+          if (!r.ok) throw new Error('Not found');
+          var d = await r.json();
+          name = d.summitName || d.name || '';
+        } else if (program === 'WWFF') {
+          var r = await fetch('https://wwff.co/api/v1/location/search?ref=' + encodeURIComponent(ref));
+          if (!r.ok) throw new Error('Not found');
+          var d = await r.json();
+          name = (d && d.length > 0 && d[0].name) ? d[0].name : '';
+          if (!name) throw new Error('Not found');
+        } else if (program === 'IOTA' || program === 'BOTA') {
+          spinner.className = 'fn-ref-status';
+          result.className  = 'fn-lookup-result warn';
+          result.textContent = program + ' — no public API. Enter park name manually.';
+          return;
+        } else {
+          spinner.className = 'fn-ref-status';
+          result.className  = 'fn-lookup-result warn';
+          result.textContent = 'Unknown program — enter park name manually.';
+          return;
+        }
+
+        if (name) {
+          if (!parkEl.value || parkEl.dataset.autofilled === 'true') {
+            parkEl.value = name;
+            parkEl.dataset.autofilled = 'true';
+          }
+          if (d.latitude && d.longitude) {
+            var WMO = {0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',45:'Fog',48:'Fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',61:'Light rain',63:'Rain',65:'Heavy rain',80:'Light showers',81:'Showers',82:'Heavy showers',95:'Thunderstorm'};
+            var dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+            fetch('https://api.open-meteo.com/v1/forecast?latitude='+d.latitude+'&longitude='+d.longitude+'&current=temperature_2m,weathercode,windspeed_10m,winddirection_10m&temperature_unit=fahrenheit&windspeed_unit=mph')
+              .then(function(wr){return wr.json();})
+              .then(function(wd){
+                var c = wd.current;
+                var wEl = document.getElementById('fn-weather');
+                if (wEl && !wEl.value) {
+                  wEl.value = (WMO[c.weathercode]||'Mixed') + ', ' + Math.round(c.temperature_2m) + '°F, ' + dirs[Math.round(c.winddirection_10m/22.5)%16] + ' winds ' + Math.round(c.windspeed_10m) + ' mph';
+                }
+              }).catch(function(){});
+          }
+          spinner.className  = 'fn-ref-status ok ti ti-check';
+          result.className   = 'fn-lookup-result ok';
+          result.textContent = '✓ ' + program + ': ' + name;
+          updateFolderPreview();
+        } else {
+          throw new Error('No name returned');
+        }
+      } catch(e) {
+        spinner.className  = 'fn-ref-status err ti ti-alert-circle';
+        result.className   = 'fn-lookup-result err';
+        result.textContent = 'Not found in database — enter park name manually.';
+      }
+    }
+
+    // ── Input Binding Listeners ──
+    document.getElementById('fn-ref').addEventListener('input', function() {
+      var ref = this.value.trim().toUpperCase();
+      if (!ref) {
+        setProgramBadge('');
+        document.getElementById('fn-ref-spinner').className = 'fn-ref-status';
+        document.getElementById('fn-lookup-result').className = 'fn-lookup-result';
+        updateFolderPreview(); return;
+      }
+      setProgramBadge(detectProgram(ref));
+      updateFolderPreview();
+      clearTimeout(lookupDebounce);
+      if (ref.length >= 4) lookupDebounce = setTimeout(function(){ lookupRef(ref); }, 700);
+    });
+
+    document.getElementById('fn-noref').addEventListener('change', function() {
+      var refField = document.getElementById('fn-ref');
+      if (this.checked) {
+        refField.value = ''; refField.disabled = true; refField.style.opacity = '0.4';
+        document.getElementById('fn-program-badge').classList.remove('show');
+        document.getElementById('fn-ref-spinner').className = 'fn-ref-status';
+        document.getElementById('fn-lookup-result').className = 'fn-lookup-result';
+        detectedProgram = 'none';
+      } else {
+        refField.disabled = false; refField.style.opacity = '1';
+        detectedProgram = '';
+      }
+      updateFolderPreview();
+    });
+
+    document.getElementById('fn-park').addEventListener('input', function() {
+      this.dataset.autofilled = 'false'; updateFolderPreview();
+    });
+
+    document.getElementById('fn-date').addEventListener('input', updateFolderPreview);
+
+    // ── Build field-notes.md Document Output ──
+    function buildNotes(folderName) {
+      var noRef   = document.getElementById('fn-noref').checked;
+      var ref     = noRef ? 'none' : document.getElementById('fn-ref').value.trim().toUpperCase();
+      var program = noRef ? 'none' : (detectedProgram || detectProgram(ref));
+      var shots   = Array.from(document.querySelectorAll('.fn-shot input[type="checkbox"]'))
+        .map(function(cb){ return '[' + (cb.checked ? 'x' : ' ') + '] ' + cb.dataset.shot; }).join('\n');
+
+      return '# FIELD NOTES\n' +
+        'Park: '    + document.getElementById('fn-park').value.trim()        + '\n' +
+        'Ref: '     + ref                                                    + '\n' +
+        'Program: ' + program                                                + '\n' +
+        'Date: '    + document.getElementById('fn-date').value                + '\n' +
+        'Folder: '  + folderName                                               + '\n\n' +
+        '## Equipment\n' +
+        'Radio: '       + document.getElementById('fn-radio').value.trim()      + '\n' +
+        'Antenna: '     + document.getElementById('fn-antenna').value.trim()    + '\n' +
+        'Band/Mode: '   + document.getElementById('fn-band').value.trim()       + '\n' +
+        'Power: '       + document.getElementById('fn-power').value.trim()      + '\n' +
+        'Other: '       + document.getElementById('fn-other-gear').value.trim() + '\n\n' +
+        '## Conditions\n' +
+        'Weather: '           + document.getElementById('fn-weather').value.trim()      + '\n' +
+        'SWR: '               + document.getElementById('fn-swr').value.trim()          + '\n' +
+        'Antenna Setup Notes: '+ document.getElementById('fn-antenna-notes').value.trim()+ '\n' +
+        'Setup Time: '        + document.getElementById('fn-setup-time').value.trim()   + '\n' +
+        'On Air: '            + document.getElementById('fn-on-air').value.trim()       + '\n' +
+        'Technical Issues: '  + document.getElementById('fn-technical').value.trim()    + '\n\n' +
+        '## Notes\n' +
+        'Memorable Moments: ' + document.getElementById('fn-moments').value.trim()   + '\n' +
+        'Gear Performance: '  + document.getElementById('fn-gear-perf').value.trim() + '\n' +
+        'Content Ideas: '     + document.getElementById('fn-content').value.trim()   + '\n' +
+        'Activate Again: '    + selectedAgain                                        + '\n' +
+        'Rating: '            + (selectedRating ? selectedRating + '/5' : '')         + '\n\n' +
+        '## Shot List\n' + shots + '\n';
+    }
+
+    // ── Drive Upload Sync Handler ──
+    document.getElementById('fn-save-btn').addEventListener('click', async function() {
+      if (this.classList.contains('fn-disabled')) return;
+      var noRef = document.getElementById('fn-noref').checked;
+      var ref   = document.getElementById('fn-ref').value.trim();
+      var park  = document.getElementById('fn-park').value.trim();
+
+      if (!park) { alert('Park / Site Name is required.'); return; }
+      if (!noRef && !ref) { alert('Enter a Reference ID, or check "No reference number".'); return; }
+
+      var folderName = updateFolderPreview();
+      if (!folderName) { alert('Cannot determine folder name — check input metrics.'); return; }
+
+      var notes  = buildNotes(folderName);
+      var btn    = this;
+      var status = document.getElementById('fn-status');
+
+      btn.classList.add('fn-disabled');
+      btn.innerHTML = '<i class="ti ti-loader-2" style="animation:fn-spin 1s linear infinite"></i> Saving…';
+      status.style.display = 'none';
+
+      try {
+        var saved = false;
+        if (FN_SCRIPT_URL) {
+          await fetch(FN_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({ secret: FN_PIN, folderName: folderName, content: notes, blogFolderId: BLOG_FOLDER_ID })
+          });
+          saved = true;
+          console.log("SYNC SUCCESSFUL: " + folderName);
+        }
+        
+        // Secondary Local Storage Fallback Download
+        var blob = new Blob([notes], {type:'text/plain'});
+        var burl = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = burl; a.download = 'field-notes.md';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(burl);
+
+        status.className = 'fn-status ok';
+        status.innerHTML = '<i class="ti ti-check"></i> ' + (saved ? 'Saved to Google Drive: ' + folderName : 'Downloaded locally');
+        status.style.display = 'flex';
+        
+      } catch(e) {
+        status.className = 'fn-status err';
+        status.innerHTML = '<i class="ti ti-alert-circle"></i> Error: ' + e.message;
+        status.style.display = 'flex';
+      } finally {
+        btn.classList.remove('fn-disabled');
+        btn.textContent = 'Save to Google Drive';
+      }
+    });
+  </script>
+</body>
+</html>
