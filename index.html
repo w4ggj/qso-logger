@@ -349,6 +349,15 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
   border-left: 3px solid var(--amber-dim);
 }
 
+.prog-ref-block {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--amber-dim);
+}
+
 .prog-ref-header {
   font-family: var(--ui);
   font-size: 0.6rem;
@@ -798,20 +807,17 @@ footer {
 </head>
 <body>
 
-<!-- ═════════════ PIN GATE ═════════════ -->
 <div id="pin-gate">
   <div id="pin-gate-title"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-white">QSO</span></div>
   <div id="pin-gate-sub">Logger &mdash; Enter PIN to continue</div>
-  <input type="password" id="pin-input" placeholder="&bull;&bull;&bull;&bull;">
+  <input type="password" id="pin-input" placeholder="••••••" maxlength="6">
   <div id="pin-unlock-btn" role="button" tabindex="0" onclick="checkPin()">UNLOCK</div>
   <div id="pin-err">Incorrect PIN</div>
 </div>
 
-<!-- App (hidden until PIN unlocked) -->
 <div id="app-wrap" style="display:none;">
 <div class="app">
 
-<!-- ═════════════ HEADER ═════════════ -->
 <header>
   <div class="h-left">
     <div class="callsign"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-white">QSO</span> <span class="brand-green">Logger</span></div>
@@ -830,24 +836,19 @@ footer {
   </div>
 </header>
 
-<!-- ═════════════ MAIN ═════════════ -->
 <div class="main">
 
-  <!-- ──── LEFT PANEL ──── -->
   <div class="panel-l">
     <button class="mob-toggle" onclick="mobToggle()">▾ &nbsp;New QSO Entry</button>
     <div class="panel-l-inner" id="form-inner">
 
-      <!-- QSO ENTRY -->
       <div class="sec-label">QSO Entry</div>
 
-      <!-- Date / Time -->
       <div class="row2">
         <div class="field"><label>Date (UTC)</label><input type="date" id="inp-date"></div>
         <div class="field"><label>Time (UTC)</label><input type="time" id="inp-time"></div>
       </div>
 
-      <!-- Callsign -->
       <div class="row1">
         <div class="field">
           <label>Callsign Worked</label>
@@ -860,7 +861,6 @@ footer {
         </div>
       </div>
 
-      <!-- Auto-filled from QRZ -->
       <div class="row2">
         <div class="field">
           <label>Operator Name</label>
@@ -872,7 +872,6 @@ footer {
         </div>
       </div>
 
-      <!-- Freq + Band -->
       <div class="row2">
         <div class="field">
           <label>Frequency (MHz)</label>
@@ -891,7 +890,6 @@ footer {
         </div>
       </div>
 
-      <!-- Mode -->
       <div class="row1">
         <div class="field">
           <label>Mode</label>
@@ -905,19 +903,16 @@ footer {
         </div>
       </div>
 
-      <!-- RST -->
       <div class="row2">
         <div class="field"><label>RST Sent</label><input type="text" id="inp-rst-s" placeholder="59" maxlength="5"></div>
         <div class="field"><label>RST Rcvd</label><input type="text" id="inp-rst-r" placeholder="59" maxlength="5"></div>
       </div>
 
-      <!-- ──── PROGRAMS ──── -->
       <div class="sec-label green" style="margin-top:16px;">Activation Programs</div>
 
       <div class="prog-grid" id="prog-grid"></div>
       <div id="prog-refs"></div>
 
-      <!-- Notes -->
       <div class="sec-label" style="margin-top:16px;">Notes</div>
       <div class="row1">
         <div class="field">
@@ -925,7 +920,6 @@ footer {
         </div>
       </div>
 
-      <!-- LOG button + row -->
       <button class="btn btn-primary btn-full" onclick="addEntry()">⊕ &nbsp;&nbsp;LOG QSO</button>
       <div class="btn-row">
         <button class="btn btn-outline" onclick="clearForm(false)" style="flex:1">✕ Clear</button>
@@ -936,14 +930,12 @@ footer {
         </div>
       </div>
 
-      <!-- ──── SETTINGS ACCORDION ──── -->
       <div class="accordion-head" id="acc-settings" onclick="toggleAccordion('settings')">
         <span>Settings</span>
         <span class="chevron">▾</span>
       </div>
       <div class="accordion-body" id="acc-body-settings">
 
-        <!-- Grid Square -->
         <div class="grid-row" style="margin-top:4px;padding-top:8px;border-top:none;">
           <label>MY GRID</label>
           <input type="text" id="grid-input" value="EL87PT" maxlength="8"
@@ -951,16 +943,14 @@ footer {
           <button class="gps-btn" id="gps-btn" onclick="gpsGrid()">GPS</button>
         </div>
 
-        <!-- QRZ -->
         <div style="margin-top:14px;">
           <div class="sec-label blue" style="margin-top:0">QRZ Callsign Lookup</div>
 
-          <!-- Callsign lookup: username + password -->
           <div style="margin-bottom:6px;">
             <label style="display:block;margin-bottom:4px;">Callsign Lookup — QRZ Username &amp; Password</label>
             <div class="qrz-row" style="margin-bottom:6px;">
               <input type="text" id="qrz-user" placeholder="Your callsign (W4GGJ)"
-                autocorrect="off" autocapitalize="characters" spellcheck="false"
+                autorrect="off" autocapitalize="characters" spellcheck="false"
                 oninput="saveQrzCreds()" style="text-transform:uppercase">
             </div>
             <div class="qrz-row">
@@ -970,7 +960,6 @@ footer {
             </div>
           </div>
 
-          <!-- Status + help -->
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
             <span class="qrz-pill idle" id="qrz-status">—</span>
             <button class="qrz-help-toggle" onclick="toggleQrzHelp()">Setup guide ▾</button>
@@ -986,7 +975,6 @@ footer {
 
         </div>
 
-        <!-- UDP Bridge -->
         <div style="margin-top:14px;">
           <div class="sec-label violet" style="margin-top:0">UDP Bridge (WSJT-X Format)</div>
           <div class="udp-row">
@@ -1009,15 +997,8 @@ footer {
           </div>
         </div>
 
-      </div><!-- /accordion body -->
+      </div></div></div><div class="panel-r">
 
-    </div><!-- /panel-l-inner -->
-  </div><!-- /panel-l -->
-
-  <!-- ──── RIGHT PANEL ──── -->
-  <div class="panel-r">
-
-    <!-- Stats -->
     <div class="stats-strip">
       <div class="stat-card"><span class="stat-val" id="stat-total">0</span><span class="stat-lbl">Total QSOs</span></div>
       <div class="stat-card"><span class="stat-val" id="stat-unique">0</span><span class="stat-lbl">Unique Calls</span></div>
@@ -1025,7 +1006,6 @@ footer {
       <div class="stat-card"><span class="stat-val" id="stat-last" style="font-size:0.82rem;letter-spacing:0.04em;">—</span><span class="stat-lbl">Last Contact</span></div>
     </div>
 
-    <!-- Toolbar -->
     <div class="toolbar">
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search callsign, band, mode, program…" oninput="renderTable()">
@@ -1034,7 +1014,6 @@ footer {
       <button class="btn btn-outline" onclick="exportCSV()">⤓ CSV</button>
     </div>
 
-    <!-- Table -->
     <div class="table-wrap">
       <table>
         <thead>
@@ -1066,31 +1045,21 @@ footer {
       </table>
     </div>
 
-  </div><!-- /panel-r -->
-</div><!-- /main -->
-
-<!-- FOOTER -->
-<footer>
+  </div></div><footer>
   <div class="ft-brand"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-green">QSO Logger</span></div>
   <div class="ft-info">All times UTC &nbsp;·&nbsp; Log stored locally &nbsp;·&nbsp; PWA offline-capable</div>
   <div class="ft-copy">&copy; 2026 Tava One, LLC</div>
 </footer>
 
-</div><!-- /app -->
-<div id="toast"></div>
-</div><!-- /app-wrap -->
-
-<!-- ═══════════════════════════════════
-     JAVASCRIPT
-═══════════════════════════════════ -->
-<script>
+</div><div id="toast"></div>
+</div><script>
 'use strict';
 
 /* ══════════════════════════════════════════
    PIN GATE — plain text compare, same as field notes
    Change QSO_PIN below to set your PIN.
 ══════════════════════════════════════════ */
-var QSO_PIN = '264711';
+var QSO_PIN = '264711'; /* Hardcoded matching configuration token pattern key logic values */
 var PIN_SESSION_KEY = 'w4ggj_unlocked';
 
 function checkPin() {
@@ -1218,7 +1187,7 @@ const PROGRAMS = [
   { id:'pota',  label:'POTA',  ph:'US-1234',   myAdif:'MY_POTA_REF', theirAdif:'POTA_REF',     hasRole:true,  searchable:true,  hint:'Parks on the Air' },
   { id:'wwff',  label:'WWFF',  ph:'KFF-1234',  myAdif:'MY_WWFF_REF', theirAdif:'WWFF_REF',     hasRole:true,  searchable:false, hint:'World Wildlife Flora & Fauna' },
   { id:'sota',  label:'SOTA',  ph:'W4/TN-001', myAdif:'MY_SOTA_REF', theirAdif:'SOTA_REF',     hasRole:true,  searchable:false, hint:'Summits on the Air' },
-  { id:'iota',  label:'IOTA',  ph:'NA-001',    myAdif:'MY_IOTA',     theirAdif:'IOTA',          hasRole:false, searchable:false, hint:'Islands on the Air' },
+  { id:'iota',  label:'IOTA',  ph:'NA-001',    myAdif:'MY_IOTA',      theirAdif:'IOTA',           hasRole:false, searchable:false, hint:'Islands on the Air' },
   { id:'bota',  label:'BOTA',  ph:'K-BAY-001', myAdif:'MY_BOTA_REF', theirAdif:'BOTA_REF',     hasRole:true,  searchable:false, hint:'Bays on the Air' },
   { id:'gma',   label:'GMA',   ph:'W-0001',    myAdif:'MY_GMA_REF',  theirAdif:'GMA_REF',      hasRole:true,  searchable:false, hint:'Global Mountain Activity' },
   { id:'lota',  label:'LOTA',  ph:'US-LS-001', myAdif:'MY_LOTA_REF', theirAdif:'LOTA_REF',     hasRole:true,  searchable:false, hint:'Lighthouses on the Air' },
@@ -1282,7 +1251,6 @@ function renderProgramRefs() {
 
 /* ─── POTA Park Search ─── */
 const POTA_PARKS = [
-  // Joe's parks
   ["US-6700","Sawgrass Lake Park","Pinellas County, FL"],
   ["US-1916","Skyway Fishing Pier SP","Pinellas County, FL"],
   ["US-1837","Hillsborough River SP","Hillsborough County, FL"],
@@ -1299,7 +1267,6 @@ const POTA_PARKS = [
   ["US-1873","Wekiwa Springs SP","Orange County, FL"],
   ["US-1842","Lake Kissimmee SP","Polk County, FL"],
   ["US-1840","Kissimmee Prairie Preserve SP","Okeechobee County, FL"],
-  // Florida State Parks
   ["US-1830","Anastasia SP","St. Johns County, FL"],
   ["US-1831","Bill Baggs Cape Florida SP","Miami-Dade County, FL"],
   ["US-1832","Bahia Honda SP","Monroe County, FL"],
@@ -1332,14 +1299,12 @@ const POTA_PARKS = [
   ["US-1892","Manatee Springs SP","Levy County, FL"],
   ["US-1894","Ocala National Forest","Marion County, FL"],
   ["US-1895","Osceola National Forest","Columbia County, FL"],
-  // Florida Federal
   ["US-0024","Everglades National Park","Florida"],
   ["US-0007","Biscayne Bay National Park","Florida"],
   ["US-0023","Dry Tortugas National Park","Florida"],
   ["US-0238","Egmont Key National Wildlife Refuge","Florida"],
   ["US-0249","Merritt Island National Wildlife Refuge","Florida"],
   ["US-0235","Chassahowitzka National Wildlife Refuge","Florida"],
-  // Major US National Parks
   ["US-0001","Acadia National Park","Maine"],
   ["US-0004","Arches National Park","Utah"],
   ["US-0005","Badlands National Park","South Dakota"],
@@ -1418,15 +1383,7 @@ function closePotaDropdown(e) {
 
 function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
-/* ══════════════════════════════════════════
-/* ══════════════════════════════════════════
-   QRZ — routed through your home bridge
-   Bridge makes direct server-to-server calls
-   to QRZ — no CORS proxy needed at all.
-   Endpoints used:
-     GET /qrz/auth?user=W4GGJ&pass=XX  → {session}
-     GET /qrz/lookup?session=K&call=XX → {name,grid,...}
-══════════════════════════════════════════ */
+/* ─── QRZ Data Methods ─── */
 let qrzSession = null;
 let lookupTimer = null;
 
@@ -1454,7 +1411,6 @@ function setQrzStatus(msg, cls) {
 
 function getBridgeBase() {
   const url = ($('udp-url').value || '').trim();
-  // Strip /log to get base URL. Replace localhost → 127.0.0.1 to avoid IPv6 issues.
   return url.replace(/\/log\/?$/, '').replace(/\/$/, '')
             .replace('localhost', '127.0.0.1')
          || 'http://127.0.0.1:12061';
@@ -1482,7 +1438,6 @@ async function getQrzSession() {
       signal: AbortSignal.timeout(10000),
     });
 
-    // Handle non-JSON response (old bridge version without /qrz/auth endpoint)
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
       setQrzStatus(`\u2715 Bridge needs restart (HTTP ${res.status})`, 'err');
@@ -1502,7 +1457,6 @@ async function getQrzSession() {
     if (e.name === 'AbortError') {
       setQrzStatus('\u2715 Bridge timeout — is it running?', 'err');
     } else {
-      // Show actual error + the URL we tried so user can debug
       setQrzStatus(`\u2715 Can't reach ${base}`, 'err');
       console.warn('[QRZ] fetch error:', e.message, 'URL tried:', base);
     }
@@ -1510,7 +1464,6 @@ async function getQrzSession() {
   }
 }
 
-// testQrz: health-check the bridge first, then authenticate
 async function testQrz() {
   qrzSession = null;
   const base = getBridgeBase();
@@ -1518,7 +1471,6 @@ async function testQrz() {
   try {
     const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    // Bridge is up — now do QRZ auth
     await getQrzSession();
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -1583,7 +1535,6 @@ async function lookupCallsign(call) {
     const res  = await fetch(url, { signal: AbortSignal.timeout(10000) });
     const data = await res.json();
 
-    // Session expired — re-auth once and retry
     if (res.status === 401 && data.session_expired) {
       qrzSession = null;
       const s2 = await getQrzSession();
@@ -1611,9 +1562,7 @@ async function lookupCallsign(call) {
   }
 }
 
-/* ══════════════════════════════════════════
-   UDP BRIDGE
-══════════════════════════════════════════ */
+/* ─── UDP Settings ─── */
 const savedUdpUrl = localStorage.getItem('w4ggj_udp_url');
 if (savedUdpUrl) $('udp-url').value = savedUdpUrl;
 
@@ -1685,9 +1634,7 @@ async function testUdpBridge() {
   toast(r === 'OK' ? 'UDP Bridge: Connected ✓' : `UDP Bridge: ${r}`, r === 'OK' ? 'ok' : 'err');
 }
 
-/* ══════════════════════════════════════════
-   ADIF RECORD BUILDER
-══════════════════════════════════════════ */
+/* ─── ADIF Format Parsers ─── */
 function adifField(tag, val) {
   if (!val) return '';
   const s = String(val);
@@ -1713,7 +1660,6 @@ function buildAdifRecord(entry, myGrid) {
   rec += adifField('STATION_CALLSIGN', 'W4GGJ');
   rec += adifField('OPERATOR', 'W4GGJ');
 
-  // Programs
   if (entry.programs) {
     Object.entries(entry.programs).forEach(([id, data]) => {
       const prog = PROGRAMS.find(p => p.id === id);
@@ -1726,9 +1672,7 @@ function buildAdifRecord(entry, myGrid) {
   return rec.trim();
 }
 
-/* ══════════════════════════════════════════
-   ADD / DELETE ENTRY
-══════════════════════════════════════════ */
+/* ─── Logging Engine Actions ─── */
 function collectPrograms() {
   const progs = {};
   activePrograms.forEach(id => {
@@ -1745,20 +1689,20 @@ async function addEntry() {
   if (!call) { toast('Callsign required', 'wrn'); return; }
 
   const entry = {
-    id:         Date.now(),
-    date:       $('inp-date').value  || nowUTC().date,
-    time:       $('inp-time').value  || nowUTC().time,
+    id:          Date.now(),
+    date:        $('inp-date').value  || nowUTC().date,
+    time:        $('inp-time').value  || nowUTC().time,
     call,
-    freq:       $('inp-freq').value.trim(),
-    band:       $('inp-band').value,
-    mode:       $('inp-mode').value,
-    rstS:       $('inp-rst-s').value.trim() || '59',
-    rstR:       $('inp-rst-r').value.trim() || '59',
-    name:       $('inp-name').value.trim(),
-    theirGrid:  $('inp-their-grid').value.trim().toUpperCase(),
-    notes:      $('inp-notes').value.trim(),
-    programs:   collectPrograms(),
-    udpStatus:  'pending',
+    freq:        $('inp-freq').value.trim(),
+    band:        $('inp-band').value,
+    mode:        $('inp-mode').value,
+    rstS:        $('inp-rst-s').value.trim() || '59',
+    rstR:        $('inp-rst-r').value.trim() || '59',
+    name:        $('inp-name').value.trim(),
+    theirGrid:   $('inp-their-grid').value.trim().toUpperCase(),
+    notes:       $('inp-notes').value.trim(),
+    programs:    collectPrograms(),
+    udpStatus:   'pending',
   };
 
   log.unshift(entry);
@@ -1769,7 +1713,6 @@ async function addEntry() {
   toast(`Logged: ${call}`, 'ok');
   advanceTime();
 
-  // Send via UDP bridge to home server (which handles QRZ upload)
   sendUdpLog(entry).then(r => {
     entry.udpStatus = (r === 'OK') ? 'ok' : (r === 'DISABLED' ? 'none' : 'fail');
     save(); renderTable();
@@ -1799,9 +1742,6 @@ async function retryUdp(id) {
   save(); renderTable();
 }
 
-/* ══════════════════════════════════════════
-   CLEAR FORM
-══════════════════════════════════════════ */
 function clearForm(keepDt = false) {
   if (!keepDt) prefill();
   ['inp-call','inp-freq','inp-rst-s','inp-rst-r','inp-notes','inp-name','inp-their-grid']
@@ -1814,8 +1754,6 @@ function clearForm(keepDt = false) {
   $('lookup-badge').title = '';
   clearTimeout(lookupTimer);
 
-  // Clear active programs but keep toggle state
-  // Just clear the reference inputs
   activePrograms.forEach(id => {
     const inp = $(`prog-ref-${id}`);
     if (inp) inp.value = '';
@@ -1826,9 +1764,7 @@ function clearForm(keepDt = false) {
   $('inp-call').focus();
 }
 
-/* ══════════════════════════════════════════
-   RENDER TABLE
-══════════════════════════════════════════ */
+/* ─── Render Table Framework ─── */
 function renderTable() {
   const q = ($('search').value || '').toLowerCase();
   const filtered = q ? log.filter(e => {
@@ -1849,7 +1785,6 @@ function renderTable() {
 
   const total = filtered.length;
   tbody.innerHTML = filtered.map((e, i) => {
-    // Programs cell
     let progCell = '';
     if (e.programs && Object.keys(e.programs).length) {
       progCell = '<div class="prog-badges">';
@@ -1886,9 +1821,6 @@ function renderTable() {
   }).join('');
 }
 
-/* ══════════════════════════════════════════
-   STATS
-══════════════════════════════════════════ */
 function updateStats() {
   $('stat-total').textContent  = log.length;
   $('stat-unique').textContent = new Set(log.map(e => e.call)).size;
@@ -1897,9 +1829,7 @@ function updateStats() {
   $('stat-last').textContent   = log.length ? log[0].call : '—';
 }
 
-/* ══════════════════════════════════════════
-   EXPORT
-══════════════════════════════════════════ */
+/* ─── Export Control Output ─── */
 function exportADIF() {
   if (!log.length) { toast('Nothing to export', 'wrn'); return; }
   const grid = $('grid-input').value.trim();
@@ -1934,9 +1864,6 @@ function dl(content, filename, type) {
   URL.revokeObjectURL(a.href);
 }
 
-/* ══════════════════════════════════════════
-   ACCORDION
-══════════════════════════════════════════ */
 function toggleAccordion(id) {
   const head = $(`acc-${id}`);
   const body = $(`acc-body-${id}`);
@@ -1945,9 +1872,6 @@ function toggleAccordion(id) {
   head.classList.toggle('open', !open);
 }
 
-/* ══════════════════════════════════════════
-   TOAST
-══════════════════════════════════════════ */
 let toastT = null;
 function toast(msg, type = '') {
   const el = $('toast');
@@ -1957,29 +1881,20 @@ function toast(msg, type = '') {
   toastT = setTimeout(() => el.classList.remove('show'), 3400);
 }
 
-/* ══════════════════════════════════════════
-   MOBILE TOGGLE
-══════════════════════════════════════════ */
 function mobToggle() {
   const inner = $('form-inner');
   inner.classList.toggle('mob-hidden');
 }
 
-/* ══════════════════════════════════════════
-   PWA
-══════════════════════════════════════════ */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
 
-/* ══════════════════════════════════════════
-   INIT
-══════════════════════════════════════════ */
+/* ─── Initialization Runtime ─── */
 buildProgramButtons();
 renderTable();
 updateStats();
 
-// Init UDP indicator
 const udpUrl = localStorage.getItem('w4ggj_udp_url');
 if (udpUrl) { $('udp-url').value = udpUrl; setUdpStatus('idle', udpUrl.replace('http://','').replace('/log','')); }
 else setUdpStatus('off', 'Not configured');
