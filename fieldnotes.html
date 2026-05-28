@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TavaOne // Field Notes</title>
-  <link rel="icon" type="image/png" href="favicon.ico">
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -103,10 +103,10 @@
       display: block;
       width: 100%;
       padding: 14px;
-      background: var(--banner-green);
+      background: var(--accent-green); /* Updated to use signature bright emerald green */
       border: none;
       border-radius: 6px;
-      color: #ffffff;
+      color: var(--bg-main); /* High contrast dark text for uniform visibility */
       font-family: var(--fn-mono);
       font-size: 14px;
       font-weight: 700;
@@ -114,11 +114,12 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
       line-height: 1.4;
-      transition: opacity 0.2s ease;
+      user-select: none;
+      transition: opacity 0.15s ease;
     }
 
     #fn-unlock-btn:hover {
-      opacity: 0.85;
+      opacity: 0.88;
     }
 
     #fn-pin-err {
@@ -477,10 +478,10 @@
       display: block;
       width: 100%;
       padding: 16px;
-      background: var(--accent-green); /* Updated to use your bright emerald green */
+      background: var(--accent-green); /* Synchronized with your bright emerald green */
       border: 2px solid var(--accent-green);
       border-radius: 6px;
-      color: var(--bg-main); /* Deep background tone text contrast for perfect readability */
+      color: var(--bg-main); /* High contrast dark text for uniform design output mapping */
       font-family: var(--fn-mono);
       font-size: 14px;
       font-weight: 700;
