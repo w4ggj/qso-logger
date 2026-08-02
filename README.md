@@ -1,143 +1,75 @@
-# W4GGJ QSO Logger v3
+# TavaOne // QSO Logger
 
-Multi-program amateur radio QSO logger. Runs as a static PWA — no server required.
+Amateur radio QSO logger built as a static PWA — no server required. Runs on
+GitHub Pages at **qso.tavaone.com**. Set up as a **GOTA (Get On The Air)** log:
+W4GGJ is the control operator, and each contact records which prospective
+student was on the mic.
 
-**Features**
+## Features
+
+- **GOTA operator field** — log the guest/student who made each contact (stays
+  set across a run of QSOs); shows as its own column, feeds a Students stat, and
+  is carried into ADIF (`APP_TAVAONE_GOTA_OP` + a `[GOTA op: NAME]` comment) and CSV.
+- **Live CAT tracking (Icom IC-706MKIIG)** — reads frequency, mode, and band
+  straight from the radio over the CAT cable using the browser's Web Serial API
+  (Chrome/Edge desktop). No extra software.
+- **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
+  automatic free fallback to callook.info and HamDB. No shack-PC bridge.
 - POTA · WWFF · SOTA · IOTA · BOTA · GMA · LOTA · WCA program support
-- QRZ callsign auto-lookup (name, grid, QTH) on callsign entry
-- QRZ Logbook upload via API
-- WSJT-X format UDP forwarding to your home logging software (via local bridge)
 - ADIF + CSV export
-- Offline-capable PWA (installs to home screen)
-- 100% static files — Shopify and GitHub Pages compatible
+- Offline-capable PWA (installs to home screen), 100% static files
 
 ---
 
 ## Files
 
 ```
-index.html          Main app (self-contained)
-sw.js               Service worker (PWA offline cache)
-manifest.json       PWA manifest
-wsjtx_bridge.py     Local UDP bridge — run on your home PC
-icons/
-  icon-192.png      PWA icon (create these)
-  icon-512.png      PWA icon
+index.html            Main app (self-contained)
+sw.js                 Service worker (PWA offline cache)
+manifest.json         PWA manifest
+qrz-proxy-worker.js   Cloudflare Worker — QRZ lookup proxy (deploy separately)
+icons/                PWA icons
 ```
 
 ---
 
-## Deploy on GitHub Pages
+## Deploy the app (GitHub Pages)
 
-1. Push these files to your GitHub repo (`w4ggj/qso-logger`)
-2. Go to **Settings → Pages**
-3. Source: **Deploy from a branch → main → / (root)**
-4. Site goes live at `https://w4ggj.github.io/qso-logger/`
+1. Push these files to `w4ggj/qso-logger`
+2. **Settings → Pages → Deploy from a branch → main → / (root)**
+3. Live at the domain in `CNAME` (qso.tavaone.com)
 
-That's it. No build step, no npm, no frameworks.
-
----
-
-## Deploy on Shopify (tavaone.com)
-
-Shopify doesn't serve arbitrary files from the root, but you have two clean options:
-
-### Option A — Custom Page with Inline App (Easiest)
-
-1. In Shopify Admin → **Online Store → Pages → Add page**
-2. Title: `QSO Logger`
-3. In the page editor, switch to **HTML** mode
-4. Paste the entire contents of `index.html` (just the `<body>` content,
-   removing `<html>/<head>/<body>` tags since Shopify wraps those)
-5. The CSS and JS are all inline so it just works
-6. Page URL will be: `https://tavaone.com/pages/qso-logger`
-
-> Note: PWA install + service worker won't work inside a Shopify page
-> (Shopify controls the domain root). Everything else works fine.
-
-### Option B — GitHub Pages + Shopify Link (Recommended)
-
-Host the full PWA (with service worker) on GitHub Pages, then link to it
-from your Shopify site. This gives you the full PWA experience.
-
-1. Deploy to GitHub Pages (see above)
-2. In Shopify, add a navigation link or page redirect to your GitHub Pages URL
-3. Optionally embed via iframe in a Shopify page:
-
-```html
-<iframe
-  src="https://w4ggj.github.io/qso-logger/"
-  style="width:100%;height:90vh;border:none;"
-  title="W4GGJ QSO Logger">
-</iframe>
-```
+No build step. After changing `index.html`, bump the cache version in `sw.js`
+(`tavaone-qso-vN`) so devices pick up the new file.
 
 ---
 
-## UDP Bridge Setup (Home Shack)
+## Callsign lookups
 
-The browser cannot send raw UDP — that's a security restriction in all browsers.
-The bridge is a tiny Python script that runs on your logging PC and acts as the
-middleman: it receives HTTP POST from the web logger and forwards it as a
-WSJT-X format UDP packet to your logging software.
+Lookups try **QRZ first** (worldwide, needs a QRZ XML Data subscription), then
+fall back automatically to the free **callook.info** (US FCC) and **HamDB**
+callbooks. The free fallback needs no account, so lookups work even with the QRZ
+fields left blank.
 
-### Requirements
-- Python 3.7+ (no pip installs needed — stdlib only)
-- Your logging software configured to receive WSJT-X UDP on port 2237
-  - **Log4OM**: Tools → Settings → WSJT-X → UDP port 2237
-  - **N1MM+**: Config → Configure Ports → WSJT-X → port 2237
-  - **DXKeeper**: WSJT-X integration → port 2237
-  - **ACLog**: Tools → WSJT-X Bridge → port 2237
+### Enabling QRZ (optional) — Cloudflare Worker
 
-### Run the bridge
+A browser page can't call QRZ directly (QRZ sends no CORS headers), so QRZ goes
+through a tiny always-on proxy. `qrz-proxy-worker.js` is that proxy — it runs on
+Cloudflare's free tier, no PC to keep on.
 
-```bash
-# Default — same PC as browser and logger
-python3 wsjtx_bridge.py
+1. Create a free account at cloudflare.com and go to **Workers & Pages → Create → Worker**
+2. Replace the starter code with the contents of `qrz-proxy-worker.js` and **Deploy**
+3. Copy the worker URL (e.g. `https://qso-qrz.yourname.workers.dev`)
+4. In the app: **Settings → QRZ Callsign Lookup**, paste the URL into **QRZ Proxy URL**
+   and enter your QRZ username + password, then click **TEST**
 
-# Logger on a different LAN machine
-python3 wsjtx_bridge.py --udp-host 192.168.1.50 --udp-port 2237
+The worker accepts your QRZ username/password from the app over HTTPS. If you'd
+rather not store credentials in the browser, set `QRZ_USER` and `QRZ_PASS` as
+Worker **secrets/variables** in the Cloudflare dashboard and leave the app fields
+blank — the worker will use those instead.
 
-# Custom HTTP port
-python3 wsjtx_bridge.py --http-port 12062
-```
-
-### Configure the web logger
-
-In the **Settings → UDP Bridge** section, enter:
-```
-http://localhost:12061/log
-```
-
-Click **TEST** — you should see `UDP Bridge: Connected ✓`.
-
-### Run on startup (Windows)
-
-Create `start_bridge.bat`:
-```bat
-@echo off
-python3 C:\path\to\wsjtx_bridge.py
-```
-Add it to your Startup folder (`Win+R → shell:startup`).
-
-### Run on startup (Mac/Linux)
-
-Add to crontab:
-```bash
-@reboot /usr/bin/python3 /path/to/wsjtx_bridge.py >> /tmp/wsjtx_bridge.log 2>&1
-```
-
----
-
-## QRZ API Key
-
-1. Log in at **qrz.com** → **Logbook** → **Settings**
-2. Under **API Access**, generate or copy your API Key
-3. Paste into **Settings → QRZ Logbook** in the logger
-4. Click **TEST** — should show `● Connected`
-
-> Requires a **QRZ XML Data subscription** for callsign lookups,
-> and a **QRZ Logbook subscription** for logbook uploads.
+> Requires a **QRZ XML Data subscription** for QRZ callsign data. The free
+> callook.info / HamDB fallback covers US callsigns without any subscription.
 
 ---
 

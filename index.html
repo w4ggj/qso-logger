@@ -946,10 +946,6 @@ footer {
       <div class="btn-row">
         <button class="btn btn-outline" onclick="clearForm(false)" style="flex:1">✕ Clear</button>
         <button class="btn btn-outline" onclick="prefill()" style="flex:1">⟳ Now</button>
-        <div class="udp-indicator" id="udp-indicator" title="UDP bridge status">
-          <span class="udp-dot off" id="udp-dot"></span>
-          <span id="udp-lbl" style="font-family:var(--ui);font-size:0.58rem;letter-spacing:0.1em;color:var(--muted)">UDP</span>
-        </div>
       </div>
 
       <div class="accordion-head" id="acc-settings" onclick="toggleAccordion('settings')">
@@ -969,10 +965,15 @@ footer {
           <div class="sec-label blue" style="margin-top:0">QRZ Callsign Lookup</div>
 
           <div style="margin-bottom:6px;">
-            <label style="display:block;margin-bottom:4px;">Callsign Lookup — QRZ Username &amp; Password</label>
+            <label style="display:block;margin-bottom:4px;">QRZ Proxy URL <span style="opacity:.6;font-weight:400;text-transform:none">(Cloudflare Worker — optional)</span></label>
+            <div class="qrz-row" style="margin-bottom:6px;">
+              <input type="text" id="qrz-proxy" placeholder="https://qso-qrz.yourname.workers.dev"
+                autocomplete="off" spellcheck="false" oninput="saveQrzProxy()">
+            </div>
+            <label style="display:block;margin-bottom:4px;">QRZ Username &amp; Password <span style="opacity:.6;font-weight:400;text-transform:none">(sent to your proxy)</span></label>
             <div class="qrz-row" style="margin-bottom:6px;">
               <input type="text" id="qrz-user" placeholder="Your callsign (W4GGJ)"
-                autorrect="off" autocapitalize="characters" spellcheck="false"
+                autocorrect="off" autocapitalize="characters" spellcheck="false"
                 oninput="saveQrzCreds()" style="text-transform:uppercase">
             </div>
             <div class="qrz-row">
@@ -987,36 +988,16 @@ footer {
             <button class="qrz-help-toggle" onclick="toggleQrzHelp()">Setup guide ▾</button>
           </div>
           <div class="qrz-help" id="qrz-help">
-            Callsign lookup routes through your <strong>home bridge</strong>.<br>
-            The bridge makes a direct connection to QRZ — no proxy needed.<br><br>
-            <strong>If TEST shows "Bridge needs restart":</strong> you need to replace
-            <code style="font-family:monospace;font-size:0.85em">udp_cloner_with_adif.py</code>
-            with the latest version and restart it — the QRZ endpoints were added in the last update.<br><br>
-            Requires a <span class="warn">QRZ XML Data subscription</span> for lookups.
+            Lookups try <strong>QRZ first</strong> (worldwide, needs a QRZ XML subscription), then fall back
+            automatically to the free <strong>callook.info</strong> and <strong>HamDB</strong> callbooks
+            (US coverage, no account) &mdash; so callsign info still fills in even with the QRZ fields left blank.<br><br>
+            <strong>To enable QRZ:</strong> deploy the included <code>qrz-proxy-worker.js</code> as a free
+            Cloudflare Worker, paste its <code>&hellip;workers.dev</code> URL above, and enter your QRZ
+            username/password. The worker keeps credentials off the public web and adds the CORS headers
+            browsers require &mdash; no shack PC or bridge needed.<br><br>
+            Requires a <span class="warn">QRZ XML Data subscription</span> for QRZ data.
           </div>
 
-        </div>
-
-        <div style="margin-top:14px;">
-          <div class="sec-label violet" style="margin-top:0">UDP Bridge (WSJT-X Format)</div>
-          <div class="udp-row">
-            <input type="text" id="udp-url" placeholder="http://localhost:12061/log"
-              oninput="saveUdpUrl(this.value)">
-            <button class="btn btn-outline" onclick="testUdpBridge()" style="padding:7px 10px;font-size:0.62rem;">TEST</button>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-            <div class="udp-indicator">
-              <span class="udp-dot off" id="udp-dot2"></span>
-              <span id="udp-status-txt" style="font-family:var(--ui);font-size:0.62rem;letter-spacing:0.08em;color:var(--muted)">Not configured</span>
-            </div>
-            <button class="qrz-help-toggle" onclick="toggleUdpHelp()">Setup guide ▾</button>
-          </div>
-          <div class="udp-help" id="udp-help">
-            Browsers can't send raw UDP — run the included <code>wsjtx_bridge.py</code> on your logging PC:<br><br>
-            <code>python3 wsjtx_bridge.py</code><br><br>
-            Bridge listens on <code>:12061</code> (HTTP) and forwards WSJT-X QSO Logged packets to your logging software on UDP <code>:2237</code>.<br><br>
-            Custom ports: <code>python3 wsjtx_bridge.py --udp-host 192.168.1.100 --udp-port 2237 --http-port 12061</code>
-          </div>
         </div>
 
         <div style="margin-top:14px;">
@@ -1089,12 +1070,11 @@ footer {
             <th>Programs</th>
             <th>Name</th>
             <th>Notes</th>
-            <th>UDP</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="log-body">
-          <tr><td colspan="14">
+          <tr><td colspan="13">
             <div class="empty-log">
               <span class="empty-icon">📻</span>
               <div class="empty-msg">No contacts logged yet</div>
@@ -1450,8 +1430,10 @@ let lookupTimer = null;
 (function restoreQrzCreds() {
   const u = localStorage.getItem('w4ggj_qrz_user');
   const p = localStorage.getItem('w4ggj_qrz_pass');
+  const px = localStorage.getItem('w4ggj_qrz_proxy');
   if (u) $('qrz-user').value = u;
   if (p) $('qrz-pass').value = p;
+  if (px && $('qrz-proxy')) $('qrz-proxy').value = px;
 })();
 
 function saveQrzCreds() {
@@ -1463,17 +1445,26 @@ function saveQrzCreds() {
   qrzSession = null;
 }
 
+function saveQrzProxy() {
+  localStorage.setItem('w4ggj_qrz_proxy', ($('qrz-proxy').value || '').trim());
+  qrzSession = null;
+}
+
+/* True only when a QRZ proxy URL + credentials are all present */
+function qrzConfigured() {
+  return !!(($('qrz-proxy') && $('qrz-proxy').value.trim()) &&
+            ($('qrz-user').value || '').trim() &&
+            ($('qrz-pass').value || '').trim());
+}
+
 function setQrzStatus(msg, cls) {
   const el = $('qrz-status');
   el.textContent = msg;
   el.className = 'qrz-pill ' + (cls || 'idle');
 }
 
-function getBridgeBase() {
-  const url = ($('udp-url').value || '').trim();
-  return url.replace(/\/log\/?$/, '').replace(/\/$/, '')
-            .replace('localhost', '127.0.0.1')
-         || 'http://127.0.0.1:12061';
+function getQrzBase() {
+  return ($('qrz-proxy') && $('qrz-proxy').value || '').trim().replace(/\/+$/, '');
 }
 
 async function getQrzSession() {
@@ -1487,8 +1478,10 @@ async function getQrzSession() {
     return null;
   }
 
+  const base = getQrzBase();
+  if (!base) { setQrzStatus('No QRZ proxy URL set', 'err'); return null; }
+
   setQrzStatus('Connecting\u2026', 'pending');
-  const base = getBridgeBase();
 
   try {
     const res = await fetch(`${base}/qrz/auth`, {
@@ -1500,7 +1493,7 @@ async function getQrzSession() {
 
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('application/json')) {
-      setQrzStatus(`\u2715 Bridge needs restart (HTTP ${res.status})`, 'err');
+      setQrzStatus(`\u2715 Proxy error (HTTP ${res.status})`, 'err');
       return null;
     }
 
@@ -1508,16 +1501,16 @@ async function getQrzSession() {
     if (data.session) {
       qrzSession = data.session;
       const sub = data.sub || '';
-      setQrzStatus('\u25cf Connected' + (sub ? ` (${sub})` : ''), 'ok');
+      setQrzStatus('\u25cf Connected' + (sub ? ` (exp ${sub})` : ''), 'ok');
       return qrzSession;
     }
     setQrzStatus('\u2715 ' + (data.error || 'Auth failed'), 'err');
     return null;
   } catch (e) {
     if (e.name === 'AbortError') {
-      setQrzStatus('\u2715 Bridge timeout — is it running?', 'err');
+      setQrzStatus('\u2715 Proxy timeout \u2014 is the Worker deployed?', 'err');
     } else {
-      setQrzStatus(`\u2715 Can't reach ${base}`, 'err');
+      setQrzStatus(`\u2715 Can't reach proxy`, 'err');
       console.warn('[QRZ] fetch error:', e.message, 'URL tried:', base);
     }
     return null;
@@ -1526,18 +1519,19 @@ async function getQrzSession() {
 
 async function testQrz() {
   qrzSession = null;
-  const base = getBridgeBase();
-  setQrzStatus('Checking bridge\u2026', 'pending');
+  const base = getQrzBase();
+  if (!base) { setQrzStatus('No proxy set \u2014 free callbook fallback still works', 'idle'); return; }
+  setQrzStatus('Checking proxy\u2026', 'pending');
   try {
     const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await getQrzSession();
   } catch (e) {
     if (e.name === 'AbortError') {
-      setQrzStatus(`\u2715 No response from ${base}`, 'err');
+      setQrzStatus(`\u2715 No response from proxy`, 'err');
     } else {
-      setQrzStatus(`\u2715 Bridge unreachable: ${base}`, 'err');
-      console.warn('[QRZ] bridge health check failed:', e.message);
+      setQrzStatus(`\u2715 Proxy unreachable`, 'err');
+      console.warn('[QRZ] proxy health check failed:', e.message);
     }
   }
 }
@@ -1575,124 +1569,96 @@ function clearQrzFields() {
 
 async function lookupCallsign(call) {
   const badge = $('lookup-badge');
-  const user  = ($('qrz-user').value || '').trim();
-  const pass  = ($('qrz-pass').value || '').trim();
-
-  if (!user || !pass) {
-    badge.className   = 'lookup-badge nokey';
-    badge.textContent = 'NO CREDS';
-    badge.title       = 'Enter QRZ username + password in Settings';
-    return;
-  }
-
-  const session = await getQrzSession();
-  if (!session) { badge.className = 'lookup-badge fail'; badge.textContent = 'ERR'; return; }
-
   badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
+
+  // 1) QRZ first \u2014 only if a proxy URL + credentials are configured
+  if (qrzConfigured()) {
+    const q = await qrzLookup(call);
+    if (q && (q.name || q.grid)) { applyLookup(q); return; }
+    // otherwise fall through to the free callbooks
+  }
+
+  // 2) Free fallback \u2014 callook.info (US FCC), then HamDB
+  const free = (await callookLookup(call)) || (await hamdbLookup(call));
+  if (free && (free.name || free.grid)) { applyLookup(free); return; }
+
+  badge.className   = 'lookup-badge fail';
+  badge.textContent = 'N/F';
+  badge.title       = 'No data found for ' + call;
+}
+
+function applyLookup(d) {
+  const badge = $('lookup-badge');
+  if (d.name) { $('inp-name').value = d.name; $('inp-name').classList.add('qrz-filled'); }
+  if (d.grid) { $('inp-their-grid').value = d.grid; $('inp-their-grid').classList.add('qrz-filled'); }
+  const loc = [d.city, d.state, d.country].filter(Boolean).join(', ');
+  badge.className   = 'lookup-badge ok';
+  badge.textContent = d.dxcc || '\u2713';
+  badge.title       = (d.name || '') + (loc ? ' \u2014 ' + loc : '') + (d.source ? `  [${d.source}]` : '');
+  if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
+}
+
+/* QRZ via the Cloudflare Worker proxy. Returns data object, or null. */
+async function qrzLookup(call, retried) {
+  const session = await getQrzSession();
+  if (!session) return null;
+  const base = getQrzBase();
   try {
-    const base = getBridgeBase();
-    const url  = `${base}/qrz/lookup?session=${encodeURIComponent(session)}&call=${encodeURIComponent(call)}`;
-    const res  = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    const data = await res.json();
-
-    if (res.status === 401 && data.session_expired) {
-      qrzSession = null;
-      const s2 = await getQrzSession();
-      if (s2) { lookupCallsign(call); return; }
-      badge.className = 'lookup-badge fail'; badge.textContent = 'SESSION'; return;
+    const url = `${base}/qrz/lookup?session=${encodeURIComponent(session)}&call=${encodeURIComponent(call)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data.session_expired && !retried) {
+      qrzSession = null;                 // refresh once, then retry
+      return qrzLookup(call, true);
     }
-
-    if (res.ok && (data.name || data.grid)) {
-      if (data.name)  { $('inp-name').value = data.name; $('inp-name').classList.add('qrz-filled'); }
-      if (data.grid)  { $('inp-their-grid').value = data.grid; $('inp-their-grid').classList.add('qrz-filled'); }
-      const loc = [data.city, data.state, data.country].filter(Boolean).join(', ');
-      badge.className   = 'lookup-badge ok';
-      badge.textContent = data.dxcc || '\u2713';
-      badge.title       = data.name + (loc ? ' \u2014 ' + loc : '');
-      if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
-    } else {
-      badge.className   = 'lookup-badge fail';
-      badge.textContent = 'N/F';
-      badge.title       = data.error || 'Not found';
-    }
+    if (res.ok && (data.name || data.grid)) return { ...data, source: 'qrz' };
+    return null;
   } catch (e) {
-    badge.className   = 'lookup-badge fail';
-    badge.textContent = 'ERR';
-    badge.title       = e.name === 'AbortError' ? 'Bridge timeout' : e.message;
+    console.warn('[QRZ] lookup error:', e.message);
+    return null;
   }
 }
 
-/* ─── UDP Settings ─── */
-const savedUdpUrl = localStorage.getItem('w4ggj_udp_url');
-if (savedUdpUrl) $('udp-url').value = savedUdpUrl;
-
-function saveUdpUrl(v) { localStorage.setItem('w4ggj_udp_url', v.trim()); }
-function toggleUdpHelp() {
-  const h = $('udp-help');
-  h.style.display = h.style.display === 'none' ? 'block' : 'none';
-}
-
-function setUdpStatus(state, label) {
-  const dots = [document.getElementById('udp-dot'), document.getElementById('udp-dot2')];
-  dots.forEach(d => { if (d) d.className = `udp-dot ${state}`; });
-  const lbl = $('udp-lbl');
-  const txt = $('udp-status-txt');
-  if (lbl) lbl.textContent = 'UDP';
-  if (txt) txt.textContent = label;
-}
-
-async function sendUdpLog(entry) {
-  const url = ($('udp-url').value || '').trim();
-  if (!url) { setUdpStatus('off', 'Not configured'); return 'DISABLED'; }
-
-  setUdpStatus('busy', 'Sending…');
+/* callook.info \u2014 free US FCC callbook, CORS + HTTPS, no key. */
+async function callookLookup(call) {
   try {
-    const payload = {
-      call:       entry.call,
-      date:       entry.date,
-      time:       entry.time,
-      freq:       entry.freq,
-      band:       entry.band,
-      mode:       entry.mode,
-      rst_s:      entry.rstS,
-      rst_r:      entry.rstR,
-      name:       entry.name || '',
-      their_grid: entry.theirGrid || '',
-      my_grid:    $('grid-input').value.trim(),
-      notes:      entry.notes || '',
-      operator:   'W4GGJ',
-      gota_op:    entry.gotaOp || '',
-      programs:   entry.programs || {},
+    const res = await fetch(`https://callook.info/${encodeURIComponent(call)}/json`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null);
+    if (!d || d.status !== 'VALID') return null;
+    let city = '', state = '';
+    const m = ((d.address && d.address.line2) || '').match(/^(.*),\s*([A-Z]{2})\b/);
+    if (m) { city = m[1].trim(); state = m[2]; }
+    return {
+      source:  'callook',
+      name:    d.name || '',
+      grid:    (d.location && d.location.gridsquare) || '',
+      city, state,
+      country: 'United States',
     };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(4000),
-    });
-
-    if (res.ok) {
-      setUdpStatus('ok', 'Sent ✓');
-      return 'OK';
-    }
-    setUdpStatus('err', `HTTP ${res.status}`);
-    return `HTTP_${res.status}`;
-  } catch (e) {
-    const msg = e.name === 'AbortError' ? 'Timeout' : 'Bridge offline';
-    setUdpStatus('err', msg);
-    return e.name === 'AbortError' ? 'TIMEOUT' : 'NOT_RUNNING';
-  }
+  } catch (e) { return null; }
 }
 
-async function testUdpBridge() {
-  const testEntry = {
-    call: 'W4GGJ', date: nowUTC().date, time: nowUTC().time,
-    freq: '14.225', band: '20m', mode: 'SSB', rstS: '59', rstR: '59',
-    name: 'Test', theirGrid: 'EL87PT', notes: 'Bridge test ping', programs: {}
-  };
-  const r = await sendUdpLog(testEntry);
-  toast(r === 'OK' ? 'UDP Bridge: Connected ✓' : `UDP Bridge: ${r}`, r === 'OK' ? 'ok' : 'err');
+/* HamDB.org \u2014 free callbook (US + some intl), CORS + HTTPS, no key. */
+async function hamdbLookup(call) {
+  const clean = v => (v && v !== 'NOT_FOUND') ? v : '';
+  try {
+    const res = await fetch(`https://api.hamdb.org/${encodeURIComponent(call)}/json/tavaqso`, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null);
+    const c = d && d.hamdb && d.hamdb.callsign;
+    if (!c) return null;
+    const name = [clean(c.fname), clean(c.name)].filter(Boolean).join(' ').trim();
+    if (!name && !clean(c.grid)) return null;
+    return {
+      source:  'hamdb',
+      name,
+      grid:    clean(c.grid),
+      city:    clean(c.addr2),
+      state:   clean(c.state),
+      country: clean(c.country),
+    };
+  } catch (e) { return null; }
 }
 
 /* ─── ADIF Format Parsers ─── */
@@ -1767,7 +1733,6 @@ async function addEntry() {
     theirGrid:   $('inp-their-grid').value.trim().toUpperCase(),
     notes:       $('inp-notes').value.trim(),
     programs:    collectPrograms(),
-    udpStatus:   'pending',
   };
 
   log.unshift(entry);
@@ -1778,11 +1743,6 @@ async function addEntry() {
   clearForm(true);
   toast(`Logged: ${call}`, 'ok');
   advanceTime();
-
-  sendUdpLog(entry).then(r => {
-    entry.udpStatus = (r === 'OK') ? 'ok' : (r === 'DISABLED' ? 'none' : 'fail');
-    save(); renderTable();
-  });
 }
 
 function advanceTime() {
@@ -1800,13 +1760,6 @@ function deleteEntry(id) {
   toast('QSO deleted');
 }
 
-async function retryUdp(id) {
-  const entry = log.find(e => e.id === id);
-  if (!entry) return;
-  const r = await sendUdpLog(entry);
-  entry.udpStatus = (r === 'OK') ? 'ok' : 'fail';
-  save(); renderTable();
-}
 
 function clearForm(keepDt = false) {
   if (!keepDt) prefill();
@@ -1841,7 +1794,7 @@ function renderTable() {
   const tbody = $('log-body');
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
+    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-log">
       <span class="empty-icon">📻</span>
       <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
       <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
@@ -1865,10 +1818,6 @@ function renderTable() {
       progCell = '<span style="color:var(--border2)">—</span>';
     }
 
-    const udpCell = e.udpStatus === 'ok'   ? '<span class="uc-ok">✓</span>'
-      : e.udpStatus === 'fail' ? `<span class="uc-fail" onclick="retryUdp(${e.id})" title="Retry UDP" style="cursor:pointer;text-decoration:underline dashed">✕</span>`
-      : '<span class="uc-off">—</span>';
-
     return `<tr>
       <td class="td-n">${total - i}</td>
       <td class="td-date">${e.date}</td>
@@ -1882,7 +1831,6 @@ function renderTable() {
       <td>${progCell}</td>
       <td class="td-name">${e.name||'—'}</td>
       <td class="td-notes" title="${(e.notes||'').replace(/"/g,'&quot;')}">${e.notes||'—'}</td>
-      <td>${udpCell}</td>
       <td><button class="btn btn-danger" onclick="deleteEntry(${e.id})">DEL</button></td>
     </tr>`;
   }).join('');
@@ -2144,10 +2092,6 @@ refreshGotaList();
     setRigStatus('off', 'Not connected');
   }
 })();
-
-const udpUrl = localStorage.getItem('w4ggj_udp_url');
-if (udpUrl) { $('udp-url').value = udpUrl; setUdpStatus('idle', udpUrl.replace('http://','').replace('/log','')); }
-else setUdpStatus('off', 'Not configured');
 
 </script>
 </body>
