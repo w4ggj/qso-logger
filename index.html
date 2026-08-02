@@ -516,6 +516,15 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .udp-row input { flex: 1; font-size: 0.78rem; }
 .rig-row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
 .rig-row select, .rig-row input { font-size: 0.78rem; padding: 7px 8px; }
+.rig-toggle {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+  font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; background: var(--bg3);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.rig-toggle .rig-toggle-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border2); transition: background .15s; }
+.rig-toggle.on { color: var(--green); border-color: var(--green-dim); background: var(--green-glow); }
+.rig-toggle.on .rig-toggle-dot { background: var(--green); box-shadow: 0 0 5px var(--green-glow); }
 
 .udp-indicator {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1020,9 +1029,12 @@ footer {
               <span class="udp-dot off" id="rig-dot"></span>
               <span id="rig-readout" style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.04em;color:var(--muted)">Not connected</span>
             </div>
-            <label style="display:flex;align-items:center;gap:5px;font-size:0.62rem;color:var(--muted);cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">
-              <input type="checkbox" id="rig-autofill" checked style="accent-color:var(--green);width:14px;height:14px;">Auto-fill
-            </label>
+            <div id="rig-autofill" class="rig-toggle on" role="button" tabindex="0" aria-pressed="true"
+                 onclick="toggleAutofill()"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAutofill();}"
+                 title="Push the radio's frequency, band and mode into the entry fields">
+              <span class="rig-toggle-dot"></span><span class="rig-toggle-lbl">Auto-fill: ON</span>
+            </div>
           </div>
           <button class="qrz-help-toggle" onclick="toggleRigHelp()">Setup guide ▾</button>
           <div class="udp-help" id="rig-help">
@@ -1899,6 +1911,17 @@ const CIV_CTRL = 0xE0;
 let rigPort = null, rigReader = null, rigWriter = null;
 let rigPollTimer = null, rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '';
+let rigAutofill = true;   // push freq/band/mode into the entry fields
+
+function toggleAutofill() {
+  rigAutofill = !rigAutofill;
+  const el = $('rig-autofill');
+  if (!el) return;
+  el.classList.toggle('on', rigAutofill);
+  el.setAttribute('aria-pressed', rigAutofill ? 'true' : 'false');
+  const lbl = el.querySelector('.rig-toggle-lbl');
+  if (lbl) lbl.textContent = 'Auto-fill: ' + (rigAutofill ? 'ON' : 'OFF');
+}
 
 function rigSupported() { return 'serial' in navigator; }
 
@@ -2031,7 +2054,7 @@ function rigSetFreq(hz) {
   const mhz = hz / 1e6;
   const mhzStr = mhz.toFixed(4);
   setRigStatus('ok', `${mhzStr} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
-  if ($('rig-autofill') && $('rig-autofill').checked) {
+  if (rigAutofill) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
   }
@@ -2040,7 +2063,7 @@ function rigSetFreq(hz) {
 function rigSetMode(code) {
   rigModeLabel = RIG_MODE_LABEL[code] || '';
   const appMode = RIG_MODE_APP[code];
-  if (appMode && $('rig-autofill') && $('rig-autofill').checked) {
+  if (appMode && rigAutofill) {
     const sel = $('inp-mode');
     if ([...sel.options].some(o => o.value === appMode)) sel.value = appMode;
   }
