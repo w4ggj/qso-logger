@@ -1,19 +1,6 @@
-/* TavaOne // QSO Logger — Service Worker v3 */
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
+/* TavaOne // QSO Logger — Service Worker v4 */
 
-  // Never intercept POST/PUT/DELETE — pass straight through
-  if (e.request.method !== 'GET') {
-    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
-    return;
-  }
-
-const alwaysNetwork = [
-    'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.'
-].some(h => url.hostname.includes(h) || url.hostname === h);
-  // ... rest unchanged
-  
-const CACHE = 'tavaone-qso-v3';
+const CACHE = 'tavaone-qso-v4';
 
 const ASSETS = [
   './',
@@ -41,10 +28,17 @@ self.addEventListener('activate', e => {
 });
 
 /* Fetch strategy:
+   - Non-GET (POST/PUT/DELETE)          → always straight to network, never cached
    - QRZ / corsproxy / localhost bridge → always network
-   - Everything else → cache-first with network fallback
+   - Everything else                    → cache-first with network fallback
 */
 self.addEventListener('fetch', e => {
+  // Never intercept/cache non-GET — pass straight through
+  if (e.request.method !== 'GET') {
+    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
+    return;
+  }
+
   const url = new URL(e.request.url);
 
   const alwaysNetwork = [

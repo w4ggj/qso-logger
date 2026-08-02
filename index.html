@@ -514,6 +514,8 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 ══════════════════════════════════════════ */
 .udp-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .udp-row input { flex: 1; font-size: 0.78rem; }
+.rig-row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.rig-row select, .rig-row input { font-size: 0.78rem; padding: 7px 8px; }
 
 .udp-indicator {
   display: inline-flex; align-items: center; gap: 6px;
@@ -654,6 +656,7 @@ tbody tr:hover td { background: rgba(16,185,129,0.05); }
 .td-mode { font-family: var(--ui); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.1em; color: var(--green); }
 .td-rst  { color: var(--text); font-size: 0.75rem; white-space: nowrap; }
 .td-name { color: var(--dim); font-size: 0.72rem; }
+.td-gota { color: var(--green); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
 .td-notes { color: var(--muted); font-size: 0.72rem; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Program badges in table */
@@ -851,7 +854,17 @@ footer {
     <button class="mob-toggle" onclick="mobToggle()">▾ &nbsp;New QSO Entry</button>
     <div class="panel-l-inner" id="form-inner">
 
-      <div class="sec-label">QSO Entry</div>
+      <div class="sec-label green">GOTA — Get On The Air</div>
+      <div class="row1">
+        <div class="field">
+          <label style="color:var(--green)">GOTA Op &mdash; Guest / Student <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(control op: W4GGJ)</span></label>
+          <input type="text" id="inp-gota" list="gota-list" placeholder="Name of the person on the mic — stays until you change it"
+            autocomplete="off" spellcheck="false">
+          <datalist id="gota-list"></datalist>
+        </div>
+      </div>
+
+      <div class="sec-label" style="margin-top:16px;">QSO Entry</div>
 
       <div class="row2">
         <div class="field"><label>Date (UTC)</label><input type="date" id="inp-date"></div>
@@ -1006,11 +1019,48 @@ footer {
           </div>
         </div>
 
+        <div style="margin-top:14px;">
+          <div class="sec-label green" style="margin-top:0">CAT — Rig Control (IC-706MKIIG)</div>
+
+          <div class="rig-row">
+            <select id="rig-baud" title="CI-V baud — must match radio menu">
+              <option value="19200">19200</option>
+              <option value="9600">9600</option>
+              <option value="4800">4800</option>
+              <option value="1200">1200</option>
+            </select>
+            <input type="text" id="rig-addr" value="58" maxlength="2" title="CI-V address (hex) — IC-706MKIIG = 58"
+              style="width:52px;text-transform:uppercase" placeholder="58">
+            <button class="btn btn-outline" id="rig-btn" onclick="rigToggle()" style="padding:7px 10px;font-size:0.62rem;flex:1">CONNECT RIG</button>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0 4px;">
+            <div class="udp-indicator">
+              <span class="udp-dot off" id="rig-dot"></span>
+              <span id="rig-readout" style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.04em;color:var(--muted)">Not connected</span>
+            </div>
+            <label style="display:flex;align-items:center;gap:5px;font-size:0.62rem;color:var(--muted);cursor:pointer;letter-spacing:0.04em;text-transform:uppercase;">
+              <input type="checkbox" id="rig-autofill" checked style="accent-color:var(--green);width:14px;height:14px;">Auto-fill
+            </label>
+          </div>
+          <button class="qrz-help-toggle" onclick="toggleRigHelp()">Setup guide ▾</button>
+          <div class="udp-help" id="rig-help">
+            Connects to the radio over the CAT cable using your browser's Web Serial API &mdash;
+            no extra software needed. <strong>Chrome or Edge on desktop only</strong> (over HTTPS).<br><br>
+            On the radio, set <code>SET &rarr; CI-V Baud</code> to match the dropdown (19200 recommended) and keep
+            <code>CI-V Address = 58h</code>. Turn <code>CI-V Transceive = ON</code> so dial changes update instantly.<br><br>
+            Click <strong>CONNECT RIG</strong>, pick the CAT cable's serial port in the browser prompt, and the live
+            frequency, band, and mode fill in automatically as you tune. Uncheck <strong>Auto-fill</strong> to just
+            monitor without overwriting the entry fields.
+          </div>
+        </div>
+
       </div></div></div><div class="panel-r">
 
     <div class="stats-strip">
       <div class="stat-card"><span class="stat-val" id="stat-total">0</span><span class="stat-lbl">Total QSOs</span></div>
       <div class="stat-card"><span class="stat-val" id="stat-unique">0</span><span class="stat-lbl">Unique Calls</span></div>
+      <div class="stat-card"><span class="stat-val" id="stat-students" style="color:var(--green)">0</span><span class="stat-lbl">Students</span></div>
       <div class="stat-card"><span class="stat-val" id="stat-bands">—</span><span class="stat-lbl">Bands Worked</span></div>
       <div class="stat-card"><span class="stat-val" id="stat-last" style="font-size:0.82rem;letter-spacing:0.04em;">—</span><span class="stat-lbl">Last Contact</span></div>
     </div>
@@ -1030,6 +1080,7 @@ footer {
             <th>#</th>
             <th>Date</th>
             <th>Time</th>
+            <th>GOTA Op</th>
             <th>Callsign</th>
             <th>Freq</th>
             <th>Band</th>
@@ -1043,7 +1094,7 @@ footer {
           </tr>
         </thead>
         <tbody id="log-body">
-          <tr><td colspan="13">
+          <tr><td colspan="14">
             <div class="empty-log">
               <span class="empty-icon">📻</span>
               <div class="empty-msg">No contacts logged yet</div>
@@ -1610,6 +1661,7 @@ async function sendUdpLog(entry) {
       my_grid:    $('grid-input').value.trim(),
       notes:      entry.notes || '',
       operator:   'W4GGJ',
+      gota_op:    entry.gotaOp || '',
       programs:   entry.programs || {},
     };
 
@@ -1665,9 +1717,12 @@ function buildAdifRecord(entry, myGrid) {
   rec += adifField('NAME', entry.name);
   rec += adifField('GRIDSQUARE', entry.theirGrid);
   rec += adifField('MY_GRIDSQUARE', myGrid);
-  rec += adifField('COMMENT', entry.notes);
+  let comment = entry.notes || '';
+  if (entry.gotaOp) comment = (comment ? comment + ' ' : '') + `[GOTA op: ${entry.gotaOp}]`;
+  rec += adifField('COMMENT', comment);
   rec += adifField('STATION_CALLSIGN', 'W4GGJ');
   rec += adifField('OPERATOR', 'W4GGJ');
+  rec += adifField('APP_TAVAONE_GOTA_OP', entry.gotaOp);
 
   if (entry.programs) {
     Object.entries(entry.programs).forEach(([id, data]) => {
@@ -1702,6 +1757,7 @@ async function addEntry() {
     date:        $('inp-date').value  || nowUTC().date,
     time:        $('inp-time').value  || nowUTC().time,
     call,
+    gotaOp:      $('inp-gota').value.trim(),
     freq:        $('inp-freq').value.trim(),
     band:        $('inp-band').value,
     mode:        $('inp-mode').value,
@@ -1718,6 +1774,7 @@ async function addEntry() {
   save();
   renderTable();
   updateStats();
+  refreshGotaList();
   clearForm(true);
   toast(`Logged: ${call}`, 'ok');
   advanceTime();
@@ -1778,13 +1835,13 @@ function renderTable() {
   const q = ($('search').value || '').toLowerCase();
   const filtered = q ? log.filter(e => {
     const progs = Object.entries(e.programs || {}).map(([id,d]) => id + ' ' + (d.ref||'')).join(' ');
-    return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + progs).toLowerCase().includes(q);
+    return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + (e.gotaOp||'') + ' ' + progs).toLowerCase().includes(q);
   }) : log;
 
   const tbody = $('log-body');
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-log">
+    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
       <span class="empty-icon">📻</span>
       <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
       <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
@@ -1816,6 +1873,7 @@ function renderTable() {
       <td class="td-n">${total - i}</td>
       <td class="td-date">${e.date}</td>
       <td class="td-time">${e.time}</td>
+      <td class="td-gota">${e.gotaOp ? e.gotaOp.replace(/</g,'&lt;') : '—'}</td>
       <td class="td-call">${e.call}</td>
       <td class="td-freq">${e.freq||'—'}</td>
       <td class="td-band">${e.band||'—'}</td>
@@ -1833,9 +1891,19 @@ function renderTable() {
 function updateStats() {
   $('stat-total').textContent  = log.length;
   $('stat-unique').textContent = new Set(log.map(e => e.call)).size;
+  const students = new Set(log.map(e => (e.gotaOp||'').trim()).filter(Boolean).map(s => s.toLowerCase()));
+  const stEl = $('stat-students'); if (stEl) stEl.textContent = students.size;
   const bands = [...new Set(log.filter(e => e.band).map(e => e.band))];
   $('stat-bands').textContent  = bands.length || '—';
   $('stat-last').textContent   = log.length ? log[0].call : '—';
+}
+
+/* Populate the GOTA-op autocomplete from names already logged */
+function refreshGotaList() {
+  const dl = $('gota-list');
+  if (!dl) return;
+  const names = [...new Set(log.map(e => (e.gotaOp||'').trim()).filter(Boolean))].sort();
+  dl.innerHTML = names.map(n => `<option value="${n.replace(/"/g,'&quot;')}"></option>`).join('');
 }
 
 /* ─── Export Control Output ─── */
@@ -1850,13 +1918,13 @@ function exportADIF() {
 
 function exportCSV() {
   if (!log.length) { toast('Nothing to export', 'wrn'); return; }
-  const hdr = ['#','Date','Time','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
+  const hdr = ['#','Date','Time','GOTA_Op','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
   const rows = log.map((e, i) => {
     const progStr = Object.entries(e.programs || {})
       .map(([id, d]) => `${id.toUpperCase()}:${d.ref}(${d.role?.[0]||'?'})`)
       .join(' ');
     return [
-      log.length - i, e.date, e.time, e.call, e.freq, e.band, e.mode,
+      log.length - i, e.date, e.time, (e.gotaOp||'').replace(/,/g,';'), e.call, e.freq, e.band, e.mode,
       e.rstS, e.rstR, e.name||'', e.theirGrid||'',
       (e.notes||'').replace(/,/g,';'), progStr
     ].join(',');
@@ -1871,6 +1939,163 @@ function dl(content, filename, type) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+/* ═══════════════════════════════════════════════════
+   CAT / CI-V RIG CONTROL  —  Icom IC-706MKIIG
+   Live frequency / mode / band over Web Serial.
+   Frame: FE FE <to> <from> <cmd> [data…] FD
+   Rig CI-V addr = 0x58 (default), controller = 0xE0.
+   ═══════════════════════════════════════════════════ */
+const CIV_CTRL = 0xE0;
+let rigPort = null, rigReader = null, rigWriter = null;
+let rigPollTimer = null, rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
+let rigModeLabel = '';
+
+function rigSupported() { return 'serial' in navigator; }
+
+function toggleRigHelp() {
+  const h = $('rig-help');
+  const vis = getComputedStyle(h).display !== 'none';
+  h.style.display = vis ? 'none' : 'block';
+}
+
+function setRigStatus(state, txt) {
+  const dot = $('rig-dot');
+  if (dot) dot.className = 'udp-dot ' + (state === 'ok' ? 'ok' : state === 'err' ? 'err' : 'off');
+  const r = $('rig-readout');
+  if (r && txt) r.textContent = txt;
+}
+
+function rigToggle() {
+  if (rigConnected) rigDisconnect(false);
+  else rigConnect();
+}
+
+async function rigConnect() {
+  if (!rigSupported()) {
+    toast('Web Serial not supported — use Chrome or Edge on desktop', 'err');
+    return;
+  }
+  try {
+    const baud = parseInt($('rig-baud').value, 10) || 19200;
+    rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
+    if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
+    rigPort = await navigator.serial.requestPort();
+    await rigPort.open({ baudRate: baud });
+    rigWriter = rigPort.writable.getWriter();
+    rigConnected = true;
+    $('rig-btn').textContent = 'DISCONNECT';
+    setRigStatus('ok', 'Connected — reading…');
+    localStorage.setItem('w4ggj_rig_baud', String(baud));
+    localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
+    rigReadLoop();                 // start listening (async, runs until disconnect)
+    rigPoll();                     // immediate first read
+    rigPollTimer = setInterval(rigPoll, 750);
+    if (navigator.serial && !rigConnect._wired) {
+      navigator.serial.addEventListener('disconnect', e => {
+        if (rigPort && e.target === rigPort) rigDisconnect(false, 'Cable unplugged');
+      });
+      rigConnect._wired = true;
+    }
+    toast('Rig connected ✓', 'ok');
+  } catch (e) {
+    setRigStatus('err', 'Connect failed');
+    if (e && e.name !== 'NotFoundError') toast('Rig connect failed: ' + (e.message || e), 'err');
+    await rigDisconnect(true);
+  }
+}
+
+async function rigDisconnect(silent, why) {
+  if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
+  try { if (rigReader) { await rigReader.cancel(); } } catch (e) {}
+  try { if (rigReader) { rigReader.releaseLock(); } } catch (e) {}
+  try { if (rigWriter) { rigWriter.releaseLock(); } } catch (e) {}
+  try { if (rigPort) { await rigPort.close(); } } catch (e) {}
+  rigPort = rigReader = rigWriter = null;
+  rigConnected = false; rigBuf = []; rigModeLabel = '';
+  const btn = $('rig-btn'); if (btn) btn.textContent = 'CONNECT RIG';
+  setRigStatus('off', why || 'Not connected');
+  if (!silent) toast(why || 'Rig disconnected');
+}
+
+async function rigSend(cmd, sub) {
+  if (!rigWriter) return;
+  const f = [0xFE, 0xFE, rigCivAddr, CIV_CTRL, cmd];
+  if (sub !== undefined) f.push(sub);
+  f.push(0xFD);
+  try { await rigWriter.write(new Uint8Array(f)); }
+  catch (e) { setRigStatus('err', 'Write error'); }
+}
+
+function rigPoll() { rigSend(0x03); rigSend(0x04); }   // read freq, read mode
+
+async function rigReadLoop() {
+  try {
+    rigReader = rigPort.readable.getReader();
+    while (true) {
+      const { value, done } = await rigReader.read();
+      if (done) break;
+      if (value && value.length) { for (const b of value) rigBuf.push(b); rigParse(); }
+    }
+  } catch (e) { /* reader cancelled on disconnect */ }
+}
+
+function rigParse() {
+  let start;
+  while ((start = rigBuf.indexOf(0xFE)) !== -1) {
+    if (rigBuf[start + 1] !== 0xFE) { rigBuf.splice(0, start + 1); continue; }
+    const end = rigBuf.indexOf(0xFD, start + 2);
+    if (end === -1) { if (start > 0) rigBuf.splice(0, start); break; }  // wait for rest
+    const frame = rigBuf.slice(start, end + 1);
+    rigBuf.splice(0, end + 1);
+    rigHandleFrame(frame);
+  }
+  if (rigBuf.length > 512) rigBuf = [];   // safety valve
+}
+
+function rigHandleFrame(f) {
+  // FE FE <to> <from> <cmd> [data…] FD
+  if (f.length < 6) return;
+  const from = f[3], cmd = f[4];
+  if (from !== rigCivAddr) return;         // only trust frames FROM the radio (ignores bus echo)
+  const data = f.slice(5, f.length - 1);
+  if (cmd === 0x03 || cmd === 0x00) {      // freq read reply, or transceive broadcast
+    const hz = rigDecodeFreq(data);
+    if (hz) rigSetFreq(hz);
+  } else if (cmd === 0x04 || cmd === 0x01) { // mode read reply, or transceive broadcast
+    if (data.length >= 1) rigSetMode(data[0]);
+  }
+}
+
+function rigDecodeFreq(d) {
+  // little-endian packed BCD, 2 digits per byte
+  if (d.length < 4) return 0;
+  let hz = 0;
+  for (let i = d.length - 1; i >= 0; i--) hz = hz * 100 + ((d[i] >> 4) * 10 + (d[i] & 0x0f));
+  return hz;
+}
+
+const RIG_MODE_LABEL = { 0:'LSB', 1:'USB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW-R', 8:'RTTY-R' };
+const RIG_MODE_APP   = { 0:'SSB', 1:'SSB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW', 8:'RTTY' };
+
+function rigSetFreq(hz) {
+  const mhz = hz / 1e6;
+  const mhzStr = mhz.toFixed(4);
+  setRigStatus('ok', `${mhzStr} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
+  if ($('rig-autofill') && $('rig-autofill').checked) {
+    $('inp-freq').value = mhzStr;
+    autoDetectBand(mhzStr);        // reuse app's band mapper
+  }
+}
+
+function rigSetMode(code) {
+  rigModeLabel = RIG_MODE_LABEL[code] || '';
+  const appMode = RIG_MODE_APP[code];
+  if (appMode && $('rig-autofill') && $('rig-autofill').checked) {
+    const sel = $('inp-mode');
+    if ([...sel.options].some(o => o.value === appMode)) sel.value = appMode;
+  }
 }
 
 function toggleAccordion(id) {
@@ -1903,6 +2128,22 @@ if ('serviceWorker' in navigator) {
 buildProgramButtons();
 renderTable();
 updateStats();
+refreshGotaList();
+
+/* Restore CAT settings + advertise browser support */
+(function initRig() {
+  const savedBaud = localStorage.getItem('w4ggj_rig_baud');
+  const savedAddr = localStorage.getItem('w4ggj_rig_addr');
+  if (savedBaud && $('rig-baud')) $('rig-baud').value = savedBaud;
+  if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
+  if (!rigSupported()) {
+    const btn = $('rig-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
+    setRigStatus('off', 'Needs Chrome/Edge desktop');
+  } else {
+    setRigStatus('off', 'Not connected');
+  }
+})();
 
 const udpUrl = localStorage.getItem('w4ggj_udp_url');
 if (udpUrl) { $('udp-url').value = udpUrl; setUdpStatus('idle', udpUrl.replace('http://','').replace('/log','')); }
