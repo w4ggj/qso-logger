@@ -1,6 +1,6 @@
 /* TavaOne // QSO Logger — Service Worker v6 */
 
-const CACHE = 'tavaone-qso-v6';
+const CACHE = 'tavaone-qso-v7';
 
 const ASSETS = [
   './',
