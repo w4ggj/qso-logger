@@ -1,6 +1,6 @@
-/* TavaOne // QSO Logger — Service Worker v6 */
+/* TavaOne // QSO Logger — Service Worker v8 */
 
-const CACHE = 'tavaone-qso-v7';
+const CACHE = 'tavaone-qso-v8';
 
 const ASSETS = [
   './',
@@ -30,6 +30,10 @@ self.addEventListener('activate', e => {
 /* Fetch strategy:
    - Non-GET (POST/PUT/DELETE)          → always straight to network, never cached
    - QRZ / corsproxy / localhost bridge → always network
+   - The app shell (page navigations)   → network-first, falling back to cache.
+     Cache-first here meant an installed PWA kept serving the old index.html
+     after a deploy until its cache happened to be evicted — a new version
+     now lands on the next launch, and the cached copy still covers offline.
    - Everything else                    → cache-first with network fallback
 */
 self.addEventListener('fetch', e => {
@@ -48,6 +52,25 @@ self.addEventListener('fetch', e => {
   if (alwaysNetwork) {
     e.respondWith(
       fetch(e.request).catch(() => new Response('', { status: 503 }))
+    );
+    return;
+  }
+
+  // App shell: network-first so a fresh deploy is picked up right away
+  const isShell = url.origin === self.location.origin &&
+    (e.request.mode === 'navigate' ||
+     url.pathname.endsWith('/') ||
+     url.pathname.endsWith('/index.html'));
+
+  if (isShell) {
+    e.respondWith(
+      fetch(e.request).then(res => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put('./index.html', clone));
+        }
+        return res;
+      }).catch(() => caches.match('./index.html').then(c => c || caches.match('./')))
     );
     return;
   }
