@@ -466,6 +466,21 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .btn-danger { color: var(--red); border-color: rgba(192,24,15,0.2); font-size: 0.6rem; padding: 4px 8px; }
 .btn-danger:hover { background: var(--red-soft); border-color: rgba(192,24,15,0.5); }
 
+.btn-edit { color: var(--amber); border-color: var(--amber-dim); font-size: 0.6rem; padding: 4px 8px; }
+.btn-edit:hover { background: var(--amber-soft); border-color: var(--amber); }
+
+/* Edit-mode banner above the LOG/UPDATE button */
+.edit-banner {
+  display: none; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: 14px; padding: 8px 10px;
+  background: var(--amber-soft); border: 1px solid var(--amber-dim);
+  border-radius: var(--r);
+  font-family: var(--ui); font-size: 0.66rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber);
+}
+.edit-banner.open { display: flex; }
+.edit-banner strong { font-family: var(--mono); letter-spacing: 0.08em; color: var(--heading); }
+
 .btn-full { width: 100%; margin-top: 14px; }
 
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
@@ -666,6 +681,10 @@ tbody tr:hover td { background: rgba(16,185,129,0.05); }
 .td-rst  { color: var(--text); font-size: 0.75rem; white-space: nowrap; }
 .td-name { color: var(--dim); font-size: 0.72rem; }
 .td-gota { color: var(--green); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.td-ctrl { color: var(--dim); font-family: var(--mono); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
+.row-acts { display: flex; gap: 6px; justify-content: flex-end; }
+tbody tr.row-editing td { background: var(--amber-soft); }
+tbody tr.row-editing td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
 .td-notes { color: var(--muted); font-size: 0.72rem; max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Program badges in table */
@@ -741,8 +760,10 @@ footer {
 @media (max-width: 960px) {
   .mob-toggle { display: block; }
   .panel-l-inner.mob-hidden { display: none; }
-  th:nth-child(n+7):not(:last-child):not(:nth-last-child(1)) { display: none; }
-  td:nth-child(n+7):not(:last-child):not(:nth-last-child(1)) { display: none; }
+  /* Ctrl Op is the same all session — drop it before the QSO detail columns */
+  th:nth-child(5), td:nth-child(5) { display: none; }
+  th:nth-child(n+8):not(:last-child):not(:nth-last-child(1)) { display: none; }
+  td:nth-child(n+8):not(:last-child):not(:nth-last-child(1)) { display: none; }
 }
 
 /* ══════════════════════════════════════════
@@ -842,7 +863,7 @@ footer {
 <header>
   <div class="h-left">
     <div class="callsign"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-white">QSO</span> <span class="brand-green">Logger</span></div>
-    <div class="h-badge">W4GGJ</div>
+    <div class="h-badge" id="hdr-call">W4GGJ</div>
   </div>
   <div class="h-right">
     <div class="h-meta">
@@ -866,7 +887,15 @@ footer {
       <div class="sec-label green">GOTA — Get On The Air</div>
       <div class="row1">
         <div class="field">
-          <label style="color:var(--green)">GOTA Op &mdash; Guest / Student <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(control op: W4GGJ)</span></label>
+          <label>Control Op &mdash; Callsign <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(licensed op responsible for the station)</span></label>
+          <input type="text" id="inp-ctrl-op" placeholder="W4GGJ" maxlength="14"
+            autocorrect="off" autocapitalize="characters" spellcheck="false"
+            style="text-transform:uppercase" oninput="saveCtrlOp(this.value)">
+        </div>
+      </div>
+      <div class="row1">
+        <div class="field">
+          <label style="color:var(--green)">GOTA Op &mdash; Guest / Student <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(control op: <span id="ctrl-op-hint">W4GGJ</span>)</span></label>
           <input type="text" id="inp-gota" list="gota-list" placeholder="Name of the person on the mic — stays until you change it"
             autocomplete="off" spellcheck="false">
           <datalist id="gota-list"></datalist>
@@ -951,7 +980,11 @@ footer {
         </div>
       </div>
 
-      <button class="btn btn-primary btn-full" onclick="addEntry()">⊕ &nbsp;&nbsp;LOG QSO</button>
+      <div class="edit-banner" id="edit-banner">
+        <span>Editing <strong id="edit-banner-call">—</strong></span>
+        <button class="btn btn-ghost" onclick="cancelEdit()">✕ Cancel</button>
+      </div>
+      <button class="btn btn-primary btn-full" id="submit-btn" onclick="submitEntry()">⊕ &nbsp;&nbsp;LOG QSO</button>
       <div class="btn-row">
         <button class="btn btn-outline" onclick="clearForm(false)" style="flex:1">✕ Clear</button>
         <button class="btn btn-outline" onclick="prefill()" style="flex:1">⟳ Now</button>
@@ -1074,6 +1107,7 @@ footer {
             <th>Date</th>
             <th>Time</th>
             <th>GOTA Op</th>
+            <th>Ctrl Op</th>
             <th>Callsign</th>
             <th>Freq</th>
             <th>Band</th>
@@ -1086,7 +1120,7 @@ footer {
           </tr>
         </thead>
         <tbody id="log-body">
-          <tr><td colspan="13">
+          <tr><td colspan="14">
             <div class="empty-log">
               <span class="empty-icon">📻</span>
               <div class="empty-msg">No contacts logged yet</div>
@@ -1147,6 +1181,38 @@ const $  = id => document.getElementById(id);
 const pad = x  => String(x).padStart(2, '0');
 
 function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); }
+
+/* ─── Control Operator ───
+   The licensed op responsible for the station. Editable, remembered across
+   sessions, and stamped onto every QSO so exports stay true to who was
+   actually in control at the time. */
+const CTRL_OP_KEY   = 'w4ggj_ctrl_op';
+const CTRL_OP_DFLT  = 'W4GGJ';
+
+function getCtrlOp() {
+  return (localStorage.getItem(CTRL_OP_KEY) || '').trim().toUpperCase() || CTRL_OP_DFLT;
+}
+
+function saveCtrlOp(v) {
+  const call = (v || '').trim().toUpperCase();
+  if (call) localStorage.setItem(CTRL_OP_KEY, call);
+  else localStorage.removeItem(CTRL_OP_KEY);
+  paintCtrlOp();
+}
+
+function paintCtrlOp() {
+  const call = getCtrlOp();
+  if ($('hdr-call'))     $('hdr-call').textContent     = call;
+  if ($('ctrl-op-hint')) $('ctrl-op-hint').textContent = call;
+}
+
+/* Older QSOs predate the field — they were logged under the default call */
+function entryCtrlOp(e) { return ((e && e.ctrlOp) || '').trim() || getCtrlOp(); }
+
+/* Callsign → safe filename fragment */
+function fileTag(call) {
+  return (call || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'QSO';
+}
 
 function nowUTC() {
   const n = new Date();
@@ -1698,8 +1764,9 @@ function buildAdifRecord(entry, myGrid) {
   let comment = entry.notes || '';
   if (entry.gotaOp) comment = (comment ? comment + ' ' : '') + `[GOTA op: ${entry.gotaOp}]`;
   rec += adifField('COMMENT', comment);
-  rec += adifField('STATION_CALLSIGN', 'W4GGJ');
-  rec += adifField('OPERATOR', 'W4GGJ');
+  const ctrlOp = entryCtrlOp(entry);
+  rec += adifField('STATION_CALLSIGN', ctrlOp);
+  rec += adifField('OPERATOR', ctrlOp);
   rec += adifField('APP_TAVAONE_GOTA_OP', entry.gotaOp);
 
   if (entry.programs) {
@@ -1726,15 +1793,16 @@ function collectPrograms() {
   return progs;
 }
 
-async function addEntry() {
+/* Read the entry form. Returns null (and warns) if the callsign is missing. */
+function readForm() {
   const call = $('inp-call').value.trim().toUpperCase();
-  if (!call) { toast('Callsign required', 'wrn'); return; }
+  if (!call) { toast('Callsign required', 'wrn'); return null; }
 
-  const entry = {
-    id:          Date.now(),
+  return {
     date:        $('inp-date').value  || nowUTC().date,
     time:        $('inp-time').value  || nowUTC().time,
     call,
+    ctrlOp:      getCtrlOp(),
     gotaOp:      $('inp-gota').value.trim(),
     freq:        $('inp-freq').value.trim(),
     band:        $('inp-band').value,
@@ -1746,15 +1814,41 @@ async function addEntry() {
     notes:       $('inp-notes').value.trim(),
     programs:    collectPrograms(),
   };
+}
 
-  log.unshift(entry);
+/* The LOG/UPDATE button — logs a new QSO, or saves the one being edited */
+function submitEntry() {
+  if (editingId === null) addEntry();
+  else updateEntry();
+}
+
+function addEntry() {
+  const data = readForm();
+  if (!data) return;
+
+  log.unshift(Object.assign({ id: Date.now() }, data));
   save();
   renderTable();
   updateStats();
   refreshGotaList();
   clearForm(true);
-  toast(`Logged: ${call}`, 'ok');
+  toast(`Logged: ${data.call}`, 'ok');
   advanceTime();
+}
+
+function updateEntry() {
+  const data = readForm();
+  if (!data) return;
+
+  const i = log.findIndex(e => e.id === editingId);
+  if (i === -1) { toast('That QSO is no longer in the log', 'err'); endEdit(); return; }
+
+  log[i] = Object.assign({}, log[i], data);
+  save();
+  endEdit();
+  updateStats();
+  refreshGotaList();
+  toast(`Updated: ${data.call}`, 'ok');
 }
 
 function advanceTime() {
@@ -1768,12 +1862,100 @@ function advanceTime() {
 function deleteEntry(id) {
   if (!confirm('Delete this QSO?')) return;
   log = log.filter(e => e.id !== id);
-  save(); renderTable(); updateStats();
+  save();
+  if (editingId === id) { endEdit(); }
+  else { renderTable(); }
+  updateStats();
+  refreshGotaList();
   toast('QSO deleted');
+}
+
+/* ─── Edit A Logged QSO ─── */
+let editingId    = null;
+let formSnapshot = null;   // in-progress entry, parked while editing
+
+const FORM_FIELDS = [
+  ['date','inp-date'], ['time','inp-time'], ['call','inp-call'], ['gotaOp','inp-gota'],
+  ['freq','inp-freq'], ['band','inp-band'], ['mode','inp-mode'], ['rstS','inp-rst-s'],
+  ['rstR','inp-rst-r'], ['name','inp-name'], ['theirGrid','inp-their-grid'], ['notes','inp-notes'],
+];
+
+function fillForm(src) {
+  FORM_FIELDS.forEach(([key, id]) => { $(id).value = src[key] || ''; });
+  ['inp-name','inp-their-grid'].forEach(id => $(id).classList.remove('qrz-filled'));
+  clearTimeout(lookupTimer);
+  $('lookup-badge').className   = 'lookup-badge idle';
+  $('lookup-badge').textContent = 'QRZ';
+  $('lookup-badge').title       = '';
+  loadPrograms(src.programs);
+}
+
+function snapshotForm() {
+  const snap = { programs: collectPrograms() };
+  FORM_FIELDS.forEach(([key, id]) => { snap[key] = $(id).value; });
+  return snap;
+}
+
+/* Re-select the program buttons and refill their refs/roles */
+function loadPrograms(programs) {
+  activePrograms.forEach(id => {
+    const btn = $(`pb-${id}`);
+    if (btn) btn.classList.remove('active');
+  });
+  activePrograms.clear();
+
+  Object.keys(programs || {}).forEach(id => {
+    if (!PROGRAMS.some(p => p.id === id)) return;
+    activePrograms.add(id);
+    const btn = $(`pb-${id}`);
+    if (btn) btn.classList.add('active');
+  });
+  renderProgramRefs();
+
+  Object.entries(programs || {}).forEach(([id, d]) => {
+    const ref = $(`prog-ref-${id}`);
+    if (ref)  ref.value = (d && d.ref) || '';
+    const role = $(`prog-role-${id}`);
+    if (role && d && d.role) role.value = d.role;
+  });
+}
+
+function editEntry(id) {
+  const e = log.find(x => x.id === id);
+  if (!e) { toast('QSO not found', 'err'); return; }
+
+  if (editingId === null) formSnapshot = snapshotForm();
+  editingId = id;
+  fillForm(e);
+
+  $('submit-btn').innerHTML = '✎ &nbsp;&nbsp;UPDATE QSO';
+  $('edit-banner-call').textContent = e.call;
+  $('edit-banner').classList.add('open');
+  $('form-inner').classList.remove('mob-hidden');
+  renderTable();
+  $('form-inner').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('inp-call').focus();
+}
+
+/* Leave edit mode and put the parked in-progress entry back */
+function endEdit() {
+  editingId = null;
+  $('submit-btn').innerHTML = '⊕ &nbsp;&nbsp;LOG QSO';
+  $('edit-banner').classList.remove('open');
+  if (formSnapshot) { fillForm(formSnapshot); formSnapshot = null; }
+  else clearForm(false);
+  renderTable();
+}
+
+function cancelEdit() {
+  if (editingId === null) return;
+  endEdit();
+  toast('Edit cancelled');
 }
 
 
 function clearForm(keepDt = false) {
+  if (editingId !== null) { formSnapshot = null; endEdit(); toast('Edit cancelled'); return; }
   if (!keepDt) prefill();
   ['inp-call','inp-freq','inp-rst-s','inp-rst-r','inp-notes','inp-name','inp-their-grid']
     .forEach(id => $(id).value = '');
@@ -1800,13 +1982,13 @@ function renderTable() {
   const q = ($('search').value || '').toLowerCase();
   const filtered = q ? log.filter(e => {
     const progs = Object.entries(e.programs || {}).map(([id,d]) => id + ' ' + (d.ref||'')).join(' ');
-    return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + (e.gotaOp||'') + ' ' + progs).toLowerCase().includes(q);
+    return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + (e.gotaOp||'') + ' ' + entryCtrlOp(e) + ' ' + progs).toLowerCase().includes(q);
   }) : log;
 
   const tbody = $('log-body');
 
   if (!filtered.length) {
-    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-log">
+    tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
       <span class="empty-icon">📻</span>
       <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
       <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
@@ -1830,11 +2012,12 @@ function renderTable() {
       progCell = '<span style="color:var(--border2)">—</span>';
     }
 
-    return `<tr>
+    return `<tr class="${e.id === editingId ? 'row-editing' : ''}">
       <td class="td-n">${total - i}</td>
       <td class="td-date">${e.date}</td>
       <td class="td-time">${e.time}</td>
       <td class="td-gota">${e.gotaOp ? e.gotaOp.replace(/</g,'&lt;') : '—'}</td>
+      <td class="td-ctrl">${entryCtrlOp(e).replace(/</g,'&lt;')}</td>
       <td class="td-call">${e.call}</td>
       <td class="td-freq">${e.freq||'—'}</td>
       <td class="td-band">${e.band||'—'}</td>
@@ -1843,7 +2026,10 @@ function renderTable() {
       <td>${progCell}</td>
       <td class="td-name">${e.name||'—'}</td>
       <td class="td-notes" title="${(e.notes||'').replace(/"/g,'&quot;')}">${e.notes||'—'}</td>
-      <td><button class="btn btn-danger" onclick="deleteEntry(${e.id})">DEL</button></td>
+      <td><div class="row-acts">
+        <button class="btn btn-edit" onclick="editEntry(${e.id})">EDIT</button>
+        <button class="btn btn-danger" onclick="deleteEntry(${e.id})">DEL</button>
+      </div></td>
     </tr>`;
   }).join('');
 }
@@ -1870,26 +2056,28 @@ function refreshGotaList() {
 function exportADIF() {
   if (!log.length) { toast('Nothing to export', 'wrn'); return; }
   const grid = $('grid-input').value.trim();
-  let out = `Generated by W4GGJ QSO Logger v3\n<ADIF_VER:5>3.1.0\n<EOH>\n\n`;
+  const ctrlOp = getCtrlOp();
+  let out = `Generated by ${ctrlOp} QSO Logger v3\n<ADIF_VER:5>3.1.0\n<EOH>\n\n`;
   log.forEach(e => { out += buildAdifRecord(e, grid) + '\n'; });
-  dl(out, `W4GGJ_${nowUTC().date}.adi`, 'text/plain');
+  dl(out, `${fileTag(ctrlOp)}_${nowUTC().date}.adi`, 'text/plain');
   toast('ADIF exported', 'ok');
 }
 
 function exportCSV() {
   if (!log.length) { toast('Nothing to export', 'wrn'); return; }
-  const hdr = ['#','Date','Time','GOTA_Op','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
+  const hdr = ['#','Date','Time','Ctrl_Op','GOTA_Op','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
   const rows = log.map((e, i) => {
     const progStr = Object.entries(e.programs || {})
       .map(([id, d]) => `${id.toUpperCase()}:${d.ref}(${d.role?.[0]||'?'})`)
       .join(' ');
     return [
-      log.length - i, e.date, e.time, (e.gotaOp||'').replace(/,/g,';'), e.call, e.freq, e.band, e.mode,
+      log.length - i, e.date, e.time, entryCtrlOp(e).replace(/,/g,';'),
+      (e.gotaOp||'').replace(/,/g,';'), e.call, e.freq, e.band, e.mode,
       e.rstS, e.rstR, e.name||'', e.theirGrid||'',
       (e.notes||'').replace(/,/g,';'), progStr
     ].join(',');
   });
-  dl([hdr,...rows].join('\n'), `W4GGJ_${nowUTC().date}.csv`, 'text/csv');
+  dl([hdr,...rows].join('\n'), `${fileTag(getCtrlOp())}_${nowUTC().date}.csv`, 'text/csv');
   toast('CSV exported', 'ok');
 }
 
@@ -2096,6 +2284,8 @@ if ('serviceWorker' in navigator) {
 }
 
 /* ─── Initialization Runtime ─── */
+if ($('inp-ctrl-op')) $('inp-ctrl-op').value = getCtrlOp();
+paintCtrlOp();
 buildProgramButtons();
 renderTable();
 updateStats();

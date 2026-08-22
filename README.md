@@ -2,14 +2,22 @@
 
 Amateur radio QSO logger built as a static PWA — no server required. Runs on
 GitHub Pages at **qso.tavaone.com**. Set up as a **GOTA (Get On The Air)** log:
-W4GGJ is the control operator, and each contact records which prospective
+each contact records both the control operator's callsign and which prospective
 student was on the mic.
 
 ## Features
 
+- **Control op callsign field** — the licensed op responsible for the station.
+  Editable, remembered across sessions, shown in the header badge, and stamped
+  onto each QSO as it's logged, so it drives `STATION_CALLSIGN` / `OPERATOR` in
+  ADIF, the `Ctrl_Op` CSV column, and the export filenames. Defaults to W4GGJ.
 - **GOTA operator field** — log the guest/student who made each contact (stays
   set across a run of QSOs); shows as its own column, feeds a Students stat, and
   is carried into ADIF (`APP_TAVAONE_GOTA_OP` + a `[GOTA op: NAME]` comment) and CSV.
+- **Edit logged QSOs** — every row has an EDIT button that loads the contact back
+  into the entry form (including its activation programs) for correction. Any
+  half-typed next QSO is parked while you edit and restored when you save or
+  cancel.
 - **Live CAT tracking (Icom IC-706MKIIG)** — reads frequency, mode, and band
   straight from the radio over the CAT cable using the browser's Web Serial API
   (Chrome/Edge desktop). No extra software.
