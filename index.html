@@ -348,6 +348,30 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .prog-btn:hover { border-color: var(--border3); color: var(--text); }
 .prog-btn.active { background: var(--amber-soft); border-color: var(--amber-dim); color: var(--amber); }
 
+/* Band quick-jump row */
+.band-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.band-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--dim);
+  font-family: var(--ui);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 7px 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.band-btn:hover  { border-color: var(--border3); color: var(--text); }
+.band-btn.active { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+@media (max-width: 420px) { .band-grid { grid-template-columns: repeat(5, 1fr); } }
+
 /* Each active program's reference row */
 .prog-ref-block {
   background: var(--bg3);
@@ -940,7 +964,7 @@ footer {
         </div>
         <div class="field">
           <label>Band</label>
-          <select id="inp-band">
+          <select id="inp-band" onchange="markActiveBand()">
             <option value="">— Band —</option>
             <option>160m</option><option>80m</option><option>60m</option>
             <option>40m</option><option>30m</option><option>20m</option>
@@ -948,6 +972,13 @@ footer {
             <option>10m</option><option>6m</option><option>2m</option>
             <option>70cm</option><option>Other</option>
           </select>
+        </div>
+      </div>
+
+      <div class="row1">
+        <div class="field">
+          <label>Quick Band <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(tap to jump — each band remembers where you were)</span></label>
+          <div class="band-grid" id="band-grid"></div>
         </div>
       </div>
 
@@ -1259,6 +1290,7 @@ function autoDetectBand(v) {
   if (isNaN(f)) return;
   const m = BAND_MAP.find(([lo, hi]) => f >= lo && f <= hi);
   if (m) $('inp-band').value = m[2];
+  markActiveBand();
 }
 
 /* ─── Wheel / Arrow-key Frequency Tuning ───
@@ -1278,19 +1310,79 @@ function tuneStepHz(e) {
   return 1000;
 }
 
+/* The one place the dial moves: field, band, band memory, and the radio. */
+function setFreqHz(hz) {
+  hz = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, Math.round(hz)));
+  const mhzStr = (hz / 1e6).toFixed(4);
+  $('inp-freq').value = mhzStr;
+  autoDetectBand(mhzStr);            // also repaints the active band button
+  rememberBandFreq(bandOfHz(hz), hz);
+  tuneHoldUntil = Date.now() + 800;  // don't let a stale poll reply snap us back
+  rigTune(hz);
+}
+
 function nudgeFreq(deltaHz) {
   const step = Math.abs(deltaHz) || 1000;
   const mhz  = parseFloat($('inp-freq').value);
   let hz = isNaN(mhz) ? 0 : Math.round(mhz * 1e6);
   // Step, snapping onto the step grid so the dial lands on round numbers
-  hz = hz ? Math.round((hz + deltaHz) / step) * step : FREQ_DEFAULT;
-  hz = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, hz));
+  setFreqHz(hz ? Math.round((hz + deltaHz) / step) * step : FREQ_DEFAULT);
+}
 
-  const mhzStr = (hz / 1e6).toFixed(4);
-  $('inp-freq').value = mhzStr;
-  autoDetectBand(mhzStr);
-  tuneHoldUntil = Date.now() + 800;   // don't let a stale poll reply snap us back
-  rigTune(hz);
+/* ─── Band Quick-Jump ───
+   One tap moves the dial to a band. Each band remembers the last frequency you
+   were on, so 20m → 40m → 20m puts you back on your own frequency; the table
+   below is only where a band starts before you've ever been there. */
+const BANDS = ['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'];
+const BAND_HOME = {
+  '160m':   1900000, '80m':    3850000, '60m':    5330500, '40m':    7180000,
+  '30m':   10120000, '20m':   14250000, '17m':   18130000, '15m':   21300000,
+  '12m':   24950000, '10m':   28400000, '6m':    50125000, '2m':   146520000,
+  '70cm': 446000000,
+};
+const BAND_MEM_KEY = 'w4ggj_band_home';
+
+function bandMemory() {
+  try { return JSON.parse(localStorage.getItem(BAND_MEM_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+function rememberBandFreq(band, hz) {
+  if (!band || !BAND_HOME[band]) return;
+  const mem = bandMemory();
+  if (mem[band] === hz) return;          // no churn while the rig sits still
+  mem[band] = hz;
+  try { localStorage.setItem(BAND_MEM_KEY, JSON.stringify(mem)); } catch (e) {}
+}
+
+function bandOfHz(hz) {
+  const mhz = hz / 1e6;
+  const m = BAND_MAP.find(([lo, hi]) => mhz >= lo && mhz <= hi);
+  return m ? m[2] : '';
+}
+
+function buildBandButtons() {
+  const grid = $('band-grid');
+  if (!grid) return;
+  grid.innerHTML = BANDS.map(b =>
+    `<button type="button" class="band-btn" id="bb-${b}" onclick="jumpBand('${b}')">${b}</button>`
+  ).join('');
+  markActiveBand();
+}
+
+function markActiveBand() {
+  const cur = $('inp-band') ? $('inp-band').value : '';
+  BANDS.forEach(b => {
+    const el = $(`bb-${b}`);
+    if (el) el.classList.toggle('active', b === cur);
+  });
+}
+
+function jumpBand(band) {
+  const hz = bandMemory()[band] || BAND_HOME[band];
+  if (!hz) return;
+  setFreqHz(hz);
+  toast(`${band} — ${(hz / 1e6).toFixed(4)} MHz${rigConnected ? ' (rig tuned)' : ''}`, 'ok');
 }
 
 (function initFreqTuning() {
@@ -2174,6 +2266,11 @@ let rigAutofill = true;   // push freq/band/mode into the entry fields
 
 function toggleAutofill() {
   rigAutofill = !rigAutofill;
+  try { localStorage.setItem('w4ggj_rig_autofill', rigAutofill ? '1' : '0'); } catch (e) {}
+  paintAutofill();
+}
+
+function paintAutofill() {
   const el = $('rig-autofill');
   if (!el) return;
   el.classList.toggle('on', rigAutofill);
@@ -2198,20 +2295,26 @@ function setRigStatus(state, txt) {
 }
 
 function rigToggle() {
-  if (rigConnected) rigDisconnect(false);
-  else rigConnect();
+  if (rigConnected) {
+    try { localStorage.removeItem(RIG_AUTO_KEY); } catch (e) {}   // stay disconnected on refresh
+    rigDisconnect(false);
+  } else {
+    rigConnect();
+  }
 }
 
-async function rigConnect() {
+/* `port` skips the browser picker (used by the reconnect-on-load path);
+   `auto` keeps that path quiet when there is nothing to reconnect to. */
+async function rigConnect(port, auto) {
   if (!rigSupported()) {
-    toast('Web Serial not supported — use Chrome or Edge on desktop', 'err');
+    if (!auto) toast('Web Serial not supported — use Chrome or Edge on desktop', 'err');
     return;
   }
   try {
     const baud = parseInt($('rig-baud').value, 10) || 19200;
     rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
     if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
-    rigPort = await navigator.serial.requestPort();
+    rigPort = port || await navigator.serial.requestPort();
     await rigPort.open({ baudRate: baud });
     rigWriter = rigPort.writable.getWriter();
     rigConnected = true;
@@ -2219,6 +2322,7 @@ async function rigConnect() {
     setRigStatus('ok', 'Connected — reading…');
     localStorage.setItem('w4ggj_rig_baud', String(baud));
     localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
+    rememberRigPort();             // so a refresh can pick this cable back up
     rigReadLoop();                 // start listening (async, runs until disconnect)
     rigPoll();                     // immediate first read
     rigPollTimer = setInterval(rigPoll, 750);
@@ -2228,11 +2332,53 @@ async function rigConnect() {
       });
       rigConnect._wired = true;
     }
-    toast('Rig connected ✓', 'ok');
+    toast(auto ? 'Rig reconnected ✓' : 'Rig connected ✓', 'ok');
   } catch (e) {
+    await rigDisconnect(true);
+    if (auto) { setRigStatus('off', 'Not connected'); return; }   // nothing to shout about on load
     setRigStatus('err', 'Connect failed');
     if (e && e.name !== 'NotFoundError') toast('Rig connect failed: ' + (e.message || e), 'err');
-    await rigDisconnect(true);
+  }
+}
+
+/* ─── Reconnecting after a page refresh ───
+   Web Serial drops the port when the page reloads, so the rig came back
+   disconnected every time and the browser's port picker had to be answered
+   again. The permission does survive, though: getPorts() returns the cables
+   already granted to this origin and opening one needs no user gesture. So if
+   the rig was connected when the page went away, pick that same cable back up
+   on load. A deliberate DISCONNECT clears the flag and is respected. */
+const RIG_AUTO_KEY = 'w4ggj_rig_auto';
+const RIG_USB_KEY  = 'w4ggj_rig_usb';
+
+function portTag(port) {
+  try {
+    const i = port.getInfo && port.getInfo();
+    if (i && i.usbVendorId != null) return i.usbVendorId + ':' + i.usbProductId;
+  } catch (e) {}
+  return '';
+}
+
+function rememberRigPort() {
+  try {
+    localStorage.setItem(RIG_AUTO_KEY, '1');
+    const tag = portTag(rigPort);
+    if (tag) localStorage.setItem(RIG_USB_KEY, tag);
+  } catch (e) {}
+}
+
+async function rigAutoReconnect() {
+  if (!rigSupported()) return;
+  if (localStorage.getItem(RIG_AUTO_KEY) !== '1') return;
+  try {
+    const ports = await navigator.serial.getPorts();   // already granted — no prompt
+    if (!ports.length) return;
+    const want = localStorage.getItem(RIG_USB_KEY);
+    const port = (want && ports.find(p => portTag(p) === want)) || ports[0];
+    setRigStatus('off', 'Reconnecting…');
+    await rigConnect(port, true);
+  } catch (e) {
+    setRigStatus('off', 'Not connected');             // the button still works
   }
 }
 
@@ -2342,6 +2488,7 @@ function rigSetFreq(hz) {
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
+    rememberBandFreq(bandOfHz(hz), hz);
   }
 }
 
@@ -2384,6 +2531,7 @@ if ('serviceWorker' in navigator) {
 if ($('inp-ctrl-op')) $('inp-ctrl-op').value = getCtrlOp();
 paintCtrlOp();
 buildProgramButtons();
+buildBandButtons();
 renderTable();
 updateStats();
 refreshGotaList();
@@ -2394,12 +2542,15 @@ refreshGotaList();
   const savedAddr = localStorage.getItem('w4ggj_rig_addr');
   if (savedBaud && $('rig-baud')) $('rig-baud').value = savedBaud;
   if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
+  rigAutofill = localStorage.getItem('w4ggj_rig_autofill') !== '0';
+  paintAutofill();
   if (!rigSupported()) {
     const btn = $('rig-btn');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
     setRigStatus('off', 'Needs Chrome/Edge desktop');
   } else {
     setRigStatus('off', 'Not connected');
+    rigAutoReconnect();            // pick the cable back up after a refresh
   }
 })();
 
