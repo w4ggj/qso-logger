@@ -1,6 +1,6 @@
-/* TavaOne // QSO Logger — Service Worker v8 */
+/* TavaOne // QSO Logger — Service Worker v9 */
 
-const CACHE = 'tavaone-qso-v8';
+const CACHE = 'tavaone-qso-v9';
 
 const ASSETS = [
   './',
@@ -49,7 +49,9 @@ self.addEventListener('fetch', e => {
     'qrz.com', 'corsproxy.io', 'localhost', '127.0.0.1', '192.168.'
   ].some(h => url.hostname.includes(h) || url.hostname === h);
 
-  if (alwaysNetwork) {
+  /* version.json is how the page finds out it is stale — caching it would
+     defeat the whole point, so it always goes to the network. */
+  if (alwaysNetwork || url.pathname.endsWith('/version.json')) {
     e.respondWith(
       fetch(e.request).catch(() => new Response('', { status: 503 }))
     );

@@ -43,6 +43,7 @@ student was on the mic.
 index.html            Main app (self-contained)
 sw.js                 Service worker (PWA offline cache)
 manifest.json         PWA manifest
+version.json          Build marker the app checks to detect a stale copy
 qrz-proxy-worker.js   Cloudflare Worker — QRZ lookup proxy (deploy separately)
 icons/                PWA icons
 ```
@@ -55,8 +56,37 @@ icons/                PWA icons
 2. **Settings → Pages → Deploy from a branch → main → / (root)**
 3. Live at the domain in `CNAME` (qso.tavaone.com)
 
-No build step. After changing `index.html`, bump the cache version in `sw.js`
-(`tavaone-qso-vN`) so devices pick up the new file.
+No build step. After changing `index.html`, bump **all three**:
+
+- `APP_BUILD` in `index.html`
+- `"build"` in `version.json` (must match `APP_BUILD` exactly)
+- the cache version in `sw.js` (`tavaone-qso-vN`)
+
+---
+
+## Which build am I running?
+
+The footer shows `BUILD <id>` — the build baked into the HTML the browser
+actually loaded. On every load the page fetches `version.json` from the server
+with the cache bypassed and compares. If the server has a different build, the
+footer stamp turns amber and a bar appears at the top of the app offering to
+update.
+
+**FORCE REFRESH** (Settings → App Version) unregisters the service worker,
+deletes every cached file, and reloads from the server. Reach for it when a
+change you expect is missing:
+
+- an installed PWA serves the copy it saved offline, and a browser hard-refresh
+  in a *tab* does not touch the installed app's cache
+- a CDN in front of the domain can hold an old `index.html`; a hard-refresh
+  cannot bust an edge cache
+
+Your log lives in `localStorage` and is not touched by Force Refresh.
+
+`version.json` is a path that no old cache has ever seen, and the service worker
+is written never to cache it — so opening `https://qso.tavaone.com/version.json`
+directly tells you what the *server* is serving, independent of anything cached
+on the device.
 
 ---
 

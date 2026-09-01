@@ -749,6 +749,20 @@ footer {
 .ft-brand { font-family: var(--head); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.02em; }
 .ft-copy { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
 .ft-info { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.08em; }
+.ft-build { font-family: var(--mono); font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
+.ft-build.stale { color: var(--amber); }
+
+/* Update bar — shown when the server is serving a newer build than this page.
+   In the document flow at the top of the app rather than floating, so it can
+   never sit on top of a control. */
+#update-bar {
+  display: none; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--bg4); border-bottom: 1px solid var(--amber);
+  padding: 10px 20px;
+  font-family: var(--mono); font-size: 0.72rem; color: var(--text);
+}
+#update-bar.show { display: flex; }
+#update-bar .ub-txt { flex: 1; min-width: 200px; line-height: 1.35; }
 
 /* ══════════════════════════════════════════
    TOAST
@@ -882,6 +896,10 @@ footer {
 </div>
 
 <div id="app-wrap" style="display:none;">
+<div id="update-bar">
+  <span class="ub-txt">A newer build is on the server &mdash; this tab is running an older copy.</span>
+  <button class="btn btn-primary" onclick="forceRefresh()" style="padding:7px 10px;font-size:0.62rem;white-space:nowrap">UPDATE NOW</button>
+</div>
 <div class="app">
 
 <header>
@@ -1117,6 +1135,24 @@ footer {
           </div>
         </div>
 
+        <div style="margin-top:14px;">
+          <div class="sec-label blue" style="margin-top:0">App Version</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.04em;color:var(--muted)">
+              Loaded build <strong id="set-build" style="color:var(--text)">&mdash;</strong>
+            </span>
+            <span id="set-build-note" style="font-family:var(--mono);font-size:0.66rem;letter-spacing:0.04em;color:var(--muted)"></span>
+          </div>
+          <button class="btn btn-outline" onclick="forceRefresh()"
+            style="margin-top:8px;padding:7px 10px;font-size:0.62rem;width:100%">FORCE REFRESH &mdash; CLEAR CACHE &amp; RELOAD</button>
+          <div style="margin-top:6px;font-size:0.62rem;color:var(--muted);line-height:1.45;">
+            An installed PWA can keep serving the copy of the app it saved offline, and a browser hard-refresh
+            does not clear that copy. This button unregisters the service worker, deletes every cached file, and
+            reloads from the server &mdash; use it if a change you expect is missing. Your log is stored separately
+            and is not touched.
+          </div>
+        </div>
+
       </div></div></div><div class="panel-r">
 
     <div class="stats-strip">
@@ -1170,6 +1206,7 @@ footer {
   </div></div><footer>
   <div class="ft-brand"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-green">QSO Logger</span></div>
   <div class="ft-info">All times UTC &nbsp;·&nbsp; Log stored locally &nbsp;·&nbsp; PWA offline-capable</div>
+  <div class="ft-build" id="ft-build" title="Build loaded in this tab">BUILD &mdash;</div>
   <div class="ft-copy">&copy; 2026 Tava One, LLC</div>
 </footer>
 
@@ -2523,11 +2560,73 @@ function mobToggle() {
   inner.classList.toggle('mob-hidden');
 }
 
+/* ══════════════════════════════════════════
+   BUILD STAMP + UPDATE CHECK
+
+   APP_BUILD is baked into this file; version.json carries the same string and
+   is deployed alongside it. On load the page fetches version.json with the
+   cache bypassed — if the server's build differs from the one baked in here,
+   the copy being displayed is stale (an old service-worker cache, a CDN edge
+   cache, or a browser cache) and the update bar offers a real reset.
+
+   Bump BOTH APP_BUILD and version.json on every deploy.
+══════════════════════════════════════════ */
+const APP_BUILD = '2026-09-01-05';
+
+function paintBuild(serverBuild) {
+  const stale = !!serverBuild && serverBuild !== APP_BUILD;
+  const ft = $('ft-build');
+  if (ft) {
+    ft.textContent = `BUILD ${APP_BUILD}${stale ? ' (stale)' : ''}`;
+    ft.classList.toggle('stale', stale);
+  }
+  if ($('set-build')) $('set-build').textContent = APP_BUILD;
+  if ($('set-build-note')) {
+    $('set-build-note').textContent = !serverBuild ? '(server build unknown — offline?)'
+      : stale ? `server has ${serverBuild}` : '(up to date)';
+  }
+  const bar = $('update-bar');
+  if (bar) bar.classList.toggle('show', stale);
+}
+
+async function checkForUpdate() {
+  paintBuild(null);
+  try {
+    /* Never-before-requested URL + no-store + a cache-buster: this reaches the
+       origin even when an old cache-first worker is intercepting everything. */
+    const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    paintBuild((data && data.build) || null);
+  } catch (e) { /* offline — leave the stamp as-is */ }
+}
+
+/* Unregister the worker, drop every cache, reload from the server.
+   Deliberately leaves localStorage alone so the log survives. */
+async function forceRefresh() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (e) {}
+  try {
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } catch (e) {}
+  const u = new URL(location.href);
+  u.searchParams.set('fresh', Date.now());
+  location.replace(u.toString());
+}
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
 
 /* ─── Initialization Runtime ─── */
+checkForUpdate();
 if ($('inp-ctrl-op')) $('inp-ctrl-op').value = getCtrlOp();
 paintCtrlOp();
 buildProgramButtons();
