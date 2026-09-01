@@ -934,8 +934,9 @@ footer {
 
       <div class="row2">
         <div class="field">
-          <label>Frequency (MHz)</label>
-          <input type="text" id="inp-freq" placeholder="14.225" oninput="autoDetectBand(this.value)">
+          <label>Frequency (MHz) <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(click, then scroll to tune)</span></label>
+          <input type="text" id="inp-freq" placeholder="14.225" oninput="autoDetectBand(this.value)"
+            title="Click the field, then scroll the mouse wheel (or press ↑/↓) to step the frequency — Shift = 100 Hz, Alt = 10 kHz. With the rig connected this tunes the radio.">
         </div>
         <div class="field">
           <label>Band</label>
@@ -1077,7 +1078,11 @@ footer {
             <code>CI-V Address = 58h</code>. Turn <code>CI-V Transceive = ON</code> so dial changes update instantly.<br><br>
             Click <strong>CONNECT RIG</strong>, pick the CAT cable's serial port in the browser prompt, and the live
             frequency, band, and mode fill in automatically as you tune. Uncheck <strong>Auto-fill</strong> to just
-            monitor without overwriting the entry fields.
+            monitor without overwriting the entry fields.<br><br>
+            <strong>Wheel tuning:</strong> click the <strong>Frequency</strong> field, then scroll the mouse wheel
+            (or press <code>↑</code>/<code>↓</code>) to step the frequency &mdash; <code>Shift</code> for 100 Hz,
+            <code>Alt</code> for 10 kHz. With the rig connected each step is sent to the radio, so the wheel acts as
+            the VFO knob; with no rig connected it just sets the entry field.
           </div>
         </div>
 
@@ -1255,6 +1260,72 @@ function autoDetectBand(v) {
   const m = BAND_MAP.find(([lo, hi]) => f >= lo && f <= hi);
   if (m) $('inp-band').value = m[2];
 }
+
+/* ─── Wheel / Arrow-key Frequency Tuning ───
+   Click the Frequency field, then scroll (or press ↑/↓) to step the frequency:
+   plain = 1 kHz, Shift = 100 Hz, Alt = 10 kHz. Focus is required so a stray
+   page scroll can never move the dial. When the rig is connected each step is
+   also sent to the radio over CI-V, so the wheel really is the VFO knob. */
+const FREQ_MIN_HZ  = 30000;        // IC-706MKIIG general-coverage range
+const FREQ_MAX_HZ  = 470000000;
+const FREQ_DEFAULT = 14200000;     // where an empty field starts
+let tuneHoldUntil = 0;             // ignore rig freq echoes just after a manual step
+let wheelAccum    = 0;
+
+function tuneStepHz(e) {
+  if (e.shiftKey) return 100;
+  if (e.altKey)   return 10000;
+  return 1000;
+}
+
+function nudgeFreq(deltaHz) {
+  const step = Math.abs(deltaHz) || 1000;
+  const mhz  = parseFloat($('inp-freq').value);
+  let hz = isNaN(mhz) ? 0 : Math.round(mhz * 1e6);
+  // Step, snapping onto the step grid so the dial lands on round numbers
+  hz = hz ? Math.round((hz + deltaHz) / step) * step : FREQ_DEFAULT;
+  hz = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, hz));
+
+  const mhzStr = (hz / 1e6).toFixed(4);
+  $('inp-freq').value = mhzStr;
+  autoDetectBand(mhzStr);
+  tuneHoldUntil = Date.now() + 800;   // don't let a stale poll reply snap us back
+  rigTune(hz);
+}
+
+(function initFreqTuning() {
+  const inp = $('inp-freq');
+  if (!inp) return;
+
+  inp.addEventListener('wheel', e => {
+    if (document.activeElement !== inp) return;   // click the field first
+    e.preventDefault();
+
+    let d = e.deltaY;
+    if (e.deltaMode === 1) d *= 16;               // lines → px
+    else if (e.deltaMode === 2) d *= 400;         // pages → px
+
+    let steps;
+    if (Math.abs(d) >= 50) {                      // discrete wheel: one notch, one step
+      steps = -Math.sign(d);
+      wheelAccum = 0;
+    } else {                                      // trackpad: accumulate to a notch
+      wheelAccum += d;
+      steps = 0;
+      while (wheelAccum >=  50) { wheelAccum -= 50; steps--; }
+      while (wheelAccum <= -50) { wheelAccum += 50; steps++; }
+    }
+    if (steps) nudgeFreq(steps * tuneStepHz(e));
+  }, { passive: false });
+
+  inp.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    nudgeFreq((e.key === 'ArrowUp' ? 1 : -1) * tuneStepHz(e));
+  });
+
+  inp.addEventListener('blur', () => { wheelAccum = 0; });
+})();
 
 /* ─── Grid Square ─── */
 const savedGrid = localStorage.getItem('w4ggj_grid');
@@ -2178,10 +2249,11 @@ async function rigDisconnect(silent, why) {
   if (!silent) toast(why || 'Rig disconnected');
 }
 
-async function rigSend(cmd, sub) {
+async function rigSend(cmd, data) {
   if (!rigWriter) return;
   const f = [0xFE, 0xFE, rigCivAddr, CIV_CTRL, cmd];
-  if (sub !== undefined) f.push(sub);
+  if (Array.isArray(data)) f.push(...data);
+  else if (data !== undefined) f.push(data);
   f.push(0xFD);
   try { await rigWriter.write(new Uint8Array(f)); }
   catch (e) { setRigStatus('err', 'Write error'); }
@@ -2235,6 +2307,31 @@ function rigDecodeFreq(d) {
   return hz;
 }
 
+/* Hz → 5 bytes of little-endian packed BCD (the inverse of rigDecodeFreq) */
+function rigEncodeFreq(hz) {
+  const bytes = [];
+  let v = Math.round(hz);
+  for (let i = 0; i < 5; i++) {
+    const lo = v % 10; v = Math.floor(v / 10);
+    const hi = v % 10; v = Math.floor(v / 10);
+    bytes.push((hi << 4) | lo);
+  }
+  return bytes;
+}
+
+/* Send a tuned frequency to the radio (CI-V 0x05). Coalesced so a fast spin of
+   the wheel doesn't flood the CI-V bus — the newest target wins. */
+let rigTuneTimer = null, rigTuneTarget = 0;
+function rigTune(hz) {
+  if (!rigConnected) return;
+  rigTuneTarget = hz;
+  if (rigTuneTimer) return;
+  rigTuneTimer = setTimeout(() => {
+    rigTuneTimer = null;
+    rigSend(0x05, rigEncodeFreq(rigTuneTarget));
+  }, 120);
+}
+
 const RIG_MODE_LABEL = { 0:'LSB', 1:'USB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW-R', 8:'RTTY-R' };
 const RIG_MODE_APP   = { 0:'SSB', 1:'SSB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW', 8:'RTTY' };
 
@@ -2242,7 +2339,7 @@ function rigSetFreq(hz) {
   const mhz = hz / 1e6;
   const mhzStr = mhz.toFixed(4);
   setRigStatus('ok', `${mhzStr} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
-  if (rigAutofill) {
+  if (rigAutofill && Date.now() >= tuneHoldUntil) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
   }
