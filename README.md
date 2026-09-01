@@ -20,7 +20,15 @@ student was on the mic.
   cancel.
 - **Live CAT tracking (Icom IC-706MKIIG)** — reads frequency, mode, and band
   straight from the radio over the CAT cable using the browser's Web Serial API
-  (Chrome/Edge desktop). No extra software.
+  (Chrome/Edge desktop). No extra software. The connection is picked back up
+  automatically after a page refresh — the browser remembers the port, so no
+  second trip through the port picker.
+- **Wheel tuning** — click the Frequency field, then scroll (or press `↑`/`↓`)
+  to step the dial: 1 kHz, `Shift` 100 Hz, `Alt` 10 kHz. With the rig connected
+  each step is sent to the radio over CI-V, so the wheel is the VFO knob.
+- **Band quick-jump** — one tap per band. Each band remembers the last frequency
+  you were on, so hopping away and back returns you to your own frequency
+  instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
 - POTA · WWFF · SOTA · IOTA · BOTA · GMA · LOTA · WCA program support
