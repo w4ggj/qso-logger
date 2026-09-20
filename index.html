@@ -185,6 +185,11 @@ header {
   padding: 18px;
   overflow-y: auto;
   height: calc(100vh - 60px - 44px);
+  /* A grid item defaults to min-width:auto, so the log table was stretching
+     this panel past the viewport on a phone and dragging the stats strip,
+     the toolbar and the session bar off-screen with it. Letting it shrink
+     puts the horizontal scroll back where it belongs — inside .table-wrap. */
+  min-width: 0;
 }
 
 .panel-r::-webkit-scrollbar { width: 4px; }
@@ -663,6 +668,23 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 12px; flex-wrap: wrap;
 }
+
+/* Operating-session bar — which log you are looking at and logging into */
+.sess-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 10px; padding: 9px 12px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
+}
+.sess-lbl {
+  font-family: var(--head); font-size: 0.6rem; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+}
+.sess-bar select { min-width: 190px; flex: 1; max-width: 340px; font-size: 0.76rem; }
+.sess-hint {
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.04em;
+  color: var(--amber); flex-basis: 100%;
+}
+.sess-hint:empty { display: none; }
 .search-wrap { position: relative; flex: 1; min-width: 160px; }
 .search-wrap::before {
   content: '⌕';
@@ -1180,6 +1202,19 @@ footer {
       <div class="stat-card"><span class="stat-val" id="stat-last" style="font-size:0.82rem;letter-spacing:0.04em;">—</span><span class="stat-lbl">Last Contact</span></div>
     </div>
 
+    <div class="sess-bar">
+      <span class="sess-lbl">Log</span>
+      <select id="session-pick" onchange="setViewSession(this.value)"
+        title="Which operating session to show"></select>
+      <button class="btn btn-outline" onclick="newSession()"
+        style="padding:7px 10px;font-size:0.62rem">+ NEW SESSION</button>
+      <button class="btn btn-outline" onclick="renameSession()"
+        style="padding:7px 10px;font-size:0.62rem">RENAME</button>
+      <button class="btn btn-danger" id="sess-remove" onclick="removeEmptySession()"
+        style="padding:7px 10px;font-size:0.62rem">REMOVE</button>
+      <span class="sess-hint" id="sess-hint"></span>
+    </div>
+
     <div class="toolbar">
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search callsign, band, mode, program…" oninput="renderTable()">
@@ -1271,6 +1306,156 @@ const $  = id => document.getElementById(id);
 const pad = x  => String(x).padStart(2, '0');
 
 function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); }
+
+/* ─── Operating Sessions ───
+   A GOTA station runs a fresh session per day or per event, and wants a clean
+   log for it without losing the last one. Every QSO carries a session id; the
+   picker chooses which session the table, the stats and the exports cover.
+   Nothing is ever deleted — starting a new session just moves the cursor. */
+const SESS_KEY      = 'w4ggj_sessions';
+const SESS_ACTIVE   = 'w4ggj_session_active';
+const SESS_MIGRATED = 'w4ggj_sessions_migrated';
+const VIEW_ALL      = '__all';
+
+let sessions      = [];   // [{ id, name, created }] — newest first
+let activeSession = '';   // where new QSOs land
+let viewSession   = '';   // what the table shows; VIEW_ALL = every session
+
+function saveSessions() {
+  try { localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); } catch (e) {}
+}
+
+function sessionById(id) { return sessions.find(s => s.id === id) || null; }
+function sessionName(id) {
+  if (id === VIEW_ALL) return 'All contacts';
+  const s = sessionById(id);
+  return s ? s.name : id;
+}
+
+/* QSOs logged before sessions existed are placed by the date they were made */
+function entrySession(e) { return (e && e.session) || ('d' + ((e && e.date) || '')); }
+function sessionCount(id) {
+  return id === VIEW_ALL ? log.length : log.filter(e => entrySession(e) === id).length;
+}
+
+/* The log the table, stats and exports work on */
+function visibleLog() {
+  if (viewSession === VIEW_ALL) return log;
+  return log.filter(e => entrySession(e) === viewSession);
+}
+
+/* One-time: fold an existing flat log into one session per day it was worked.
+   That is the shape the log was already in implicitly, so nothing moves. */
+function migrateSessions() {
+  if (localStorage.getItem(SESS_MIGRATED) === '1') return;
+  const dates = new Set();
+  let touched = false;
+  log.forEach(e => {
+    if (e.session) return;
+    e.session = 'd' + (e.date || nowUTC().date);
+    dates.add(e.date || nowUTC().date);
+    touched = true;
+  });
+  dates.forEach(d => {
+    if (!sessionById('d' + d)) sessions.push({ id: 'd' + d, name: d, created: d + 'T00:00:00Z' });
+  });
+  try { localStorage.setItem(SESS_MIGRATED, '1'); } catch (e) {}
+  if (touched) { saveSessions(); save(); }
+}
+
+function loadSessions() {
+  try { sessions = JSON.parse(localStorage.getItem(SESS_KEY) || '[]') || []; }
+  catch (e) { sessions = []; }
+  migrateSessions();
+  if (!sessions.length) {
+    const d = nowUTC().date;
+    sessions = [{ id: 'd' + d, name: d, created: d + 'T00:00:00Z' }];
+    saveSessions();
+  }
+  sessions.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+  activeSession = localStorage.getItem(SESS_ACTIVE) || '';
+  if (!sessionById(activeSession)) activeSession = sessions[0].id;
+  viewSession = activeSession;
+}
+
+function paintSessions() {
+  const sel = $('session-pick');
+  if (sel) {
+    sel.innerHTML = sessions.map(s =>
+      `<option value="${s.id}">${s.name.replace(/</g,'&lt;')} — ${sessionCount(s.id)}</option>`
+    ).join('') + `<option value="${VIEW_ALL}">All contacts — ${log.length}</option>`;
+    sel.value = viewSession;
+  }
+  // Only an empty session can be removed — logs are never thrown away here.
+  const rm = $('sess-remove');
+  if (rm) {
+    const canRemove = viewSession !== VIEW_ALL && sessions.length > 1 && sessionCount(viewSession) === 0;
+    rm.style.display = canRemove ? '' : 'none';
+  }
+  const hint = $('sess-hint');
+  if (hint) {
+    hint.textContent = viewSession === VIEW_ALL
+      ? `Showing every session — new contacts still go into "${sessionName(activeSession)}"`
+      : '';
+  }
+}
+
+function newSessionId(date) {
+  let id = 'd' + date, n = 2;
+  while (sessionById(id)) { id = 'd' + date + '-' + (n++); }
+  return id;
+}
+
+function newSession() {
+  const d = nowUTC().date;
+  const sameDay = sessions.filter(x => x.name === d || x.name.indexOf(d + ' ') === 0).length;
+  const dflt = sameDay ? `${d} (${sameDay + 1})` : d;
+  const name = (prompt('Name this operating session:', dflt) || '').trim();
+  if (!name) return;                       // cancelled or blank
+  const sess = { id: newSessionId(d), name, created: new Date().toISOString() };
+  sessions.unshift(sess);
+  saveSessions();
+  if (editingId !== null) endEdit();       // the edited QSO is not in the new session
+  activeSession = viewSession = sess.id;
+  try { localStorage.setItem(SESS_ACTIVE, sess.id); } catch (e) {}
+  paintSessions(); renderTable(); updateStats();
+  toast(`New session: ${name}`, 'ok');
+}
+
+function renameSession() {
+  if (viewSession === VIEW_ALL) { toast('Pick a session to rename', 'wrn'); return; }
+  const sess = sessionById(viewSession);
+  if (!sess) return;
+  const name = (prompt('Rename this session:', sess.name) || '').trim();
+  if (!name || name === sess.name) return;
+  sess.name = name;
+  saveSessions();
+  paintSessions();
+  toast(`Renamed: ${name}`, 'ok');
+}
+
+/* Deliberately limited to empty sessions: this is for undoing a mis-tap,
+   not for clearing out a log. Contacts are only ever removed one at a time. */
+function removeEmptySession() {
+  if (viewSession === VIEW_ALL || sessions.length < 2) return;
+  const sess = sessionById(viewSession);
+  if (!sess || sessionCount(sess.id) !== 0) { toast('Only an empty session can be removed', 'wrn'); return; }
+  if (!confirm(`Remove the empty session "${sess.name}"?`)) return;
+  sessions = sessions.filter(x => x.id !== sess.id);
+  saveSessions();
+  setViewSession(sessions[0].id);
+  toast('Empty session removed');
+}
+
+function setViewSession(v) {
+  viewSession = v;
+  if (v !== VIEW_ALL) {
+    activeSession = v;
+    try { localStorage.setItem(SESS_ACTIVE, v); } catch (e) {}
+  }
+  if (editingId !== null) endEdit();       // that QSO may no longer be on screen
+  paintSessions(); renderTable(); updateStats();
+}
 
 /* ─── Control Operator ───
    The licensed op responsible for the station. Editable, remembered across
@@ -1985,6 +2170,7 @@ function buildAdifRecord(entry, myGrid) {
   rec += adifField('STATION_CALLSIGN', ctrlOp);
   rec += adifField('OPERATOR', ctrlOp);
   rec += adifField('APP_TAVAONE_GOTA_OP', entry.gotaOp);
+  rec += adifField('APP_TAVAONE_SESSION', sessionName(entrySession(entry)));
 
   if (entry.programs) {
     Object.entries(entry.programs).forEach(([id, data]) => {
@@ -2043,7 +2229,7 @@ function addEntry() {
   const data = readForm();
   if (!data) return;
 
-  log.unshift(Object.assign({ id: Date.now() }, data));
+  log.unshift(Object.assign({ id: Date.now() }, data, { session: activeSession }));
   save();
   renderTable();
   updateStats();
@@ -2197,18 +2383,19 @@ function clearForm(keepDt = false) {
 /* ─── Render Table Framework ─── */
 function renderTable() {
   const q = ($('search').value || '').toLowerCase();
-  const filtered = q ? log.filter(e => {
+  const base = visibleLog();
+  const filtered = q ? base.filter(e => {
     const progs = Object.entries(e.programs || {}).map(([id,d]) => id + ' ' + (d.ref||'')).join(' ');
     return (e.call + ' ' + e.mode + ' ' + e.band + ' ' + (e.notes||'') + ' ' + (e.name||'') + ' ' + (e.gotaOp||'') + ' ' + entryCtrlOp(e) + ' ' + progs).toLowerCase().includes(q);
-  }) : log;
+  }) : base;
 
   const tbody = $('log-body');
 
   if (!filtered.length) {
     tbody.innerHTML = `<tr><td colspan="14"><div class="empty-log">
       <span class="empty-icon">📻</span>
-      <div class="empty-msg">${q ? 'No matches' : 'No contacts logged yet'}</div>
-      <div class="empty-sub">${q ? 'Try a different search' : '<span class="blink">█</span> Ready to log QSOs'}</div>
+      <div class="empty-msg">${q ? 'No matches' : 'No contacts in this session yet'}</div>
+      <div class="empty-sub">${q ? 'Try a different search' : `<span class="blink">█</span> Ready to log QSOs into &ldquo;${sessionName(viewSession).replace(/</g,'&lt;')}&rdquo;`}</div>
     </div></td></tr>`;
     return;
   }
@@ -2252,13 +2439,15 @@ function renderTable() {
 }
 
 function updateStats() {
-  $('stat-total').textContent  = log.length;
-  $('stat-unique').textContent = new Set(log.map(e => e.call)).size;
-  const students = new Set(log.map(e => (e.gotaOp||'').trim()).filter(Boolean).map(s => s.toLowerCase()));
+  const view = visibleLog();
+  $('stat-total').textContent  = view.length;
+  $('stat-unique').textContent = new Set(view.map(e => e.call)).size;
+  const students = new Set(view.map(e => (e.gotaOp||'').trim()).filter(Boolean).map(s => s.toLowerCase()));
   const stEl = $('stat-students'); if (stEl) stEl.textContent = students.size;
-  const bands = [...new Set(log.filter(e => e.band).map(e => e.band))];
+  const bands = [...new Set(view.filter(e => e.band).map(e => e.band))];
   $('stat-bands').textContent  = bands.length || '—';
-  $('stat-last').textContent   = log.length ? log[0].call : '—';
+  $('stat-last').textContent   = view.length ? view[0].call : '—';
+  paintSessions();                 // counts in the picker follow the log
 }
 
 /* Populate the GOTA-op autocomplete from names already logged */
@@ -2271,31 +2460,34 @@ function refreshGotaList() {
 
 /* ─── Export Control Output ─── */
 function exportADIF() {
-  if (!log.length) { toast('Nothing to export', 'wrn'); return; }
+  const view = visibleLog();
+  if (!view.length) { toast('Nothing to export', 'wrn'); return; }
   const grid = $('grid-input').value.trim();
   const ctrlOp = getCtrlOp();
   let out = `Generated by ${ctrlOp} QSO Logger v3\n<ADIF_VER:5>3.1.0\n<EOH>\n\n`;
-  log.forEach(e => { out += buildAdifRecord(e, grid) + '\n'; });
-  dl(out, `${fileTag(ctrlOp)}_${nowUTC().date}.adi`, 'text/plain');
-  toast('ADIF exported', 'ok');
+  view.forEach(e => { out += buildAdifRecord(e, grid) + '\n'; });
+  dl(out, `${fileTag(ctrlOp)}_${fileTag(sessionName(viewSession))}.adi`, 'text/plain');
+  toast(`ADIF exported — ${view.length} from ${sessionName(viewSession)}`, 'ok');
 }
 
 function exportCSV() {
-  if (!log.length) { toast('Nothing to export', 'wrn'); return; }
-  const hdr = ['#','Date','Time','Ctrl_Op','GOTA_Op','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
-  const rows = log.map((e, i) => {
+  const view = visibleLog();
+  if (!view.length) { toast('Nothing to export', 'wrn'); return; }
+  const hdr = ['#','Session','Date','Time','Ctrl_Op','GOTA_Op','Call','Freq','Band','Mode','RST_S','RST_R','Name','Grid','Notes','Programs'].join(',');
+  const rows = view.map((e, i) => {
     const progStr = Object.entries(e.programs || {})
       .map(([id, d]) => `${id.toUpperCase()}:${d.ref}(${d.role?.[0]||'?'})`)
       .join(' ');
     return [
-      log.length - i, e.date, e.time, entryCtrlOp(e).replace(/,/g,';'),
+      view.length - i, sessionName(entrySession(e)).replace(/,/g,';'),
+      e.date, e.time, entryCtrlOp(e).replace(/,/g,';'),
       (e.gotaOp||'').replace(/,/g,';'), e.call, e.freq, e.band, e.mode,
       e.rstS, e.rstR, e.name||'', e.theirGrid||'',
       (e.notes||'').replace(/,/g,';'), progStr
     ].join(',');
   });
-  dl([hdr,...rows].join('\n'), `${fileTag(getCtrlOp())}_${nowUTC().date}.csv`, 'text/csv');
-  toast('CSV exported', 'ok');
+  dl([hdr,...rows].join('\n'), `${fileTag(getCtrlOp())}_${fileTag(sessionName(viewSession))}.csv`, 'text/csv');
+  toast(`CSV exported — ${view.length} from ${sessionName(viewSession)}`, 'ok');
 }
 
 function dl(content, filename, type) {
@@ -2736,7 +2928,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-20-06';
+const APP_BUILD = '2026-09-20-07';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -2796,6 +2988,8 @@ if ($('inp-ctrl-op')) $('inp-ctrl-op').value = getCtrlOp();
 paintCtrlOp();
 buildProgramButtons();
 buildBandButtons();
+loadSessions();
+paintSessions();
 renderTable();
 updateStats();
 refreshGotaList();

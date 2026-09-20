@@ -7,6 +7,11 @@ student was on the mic.
 
 ## Features
 
+- **Operating sessions** — a separate log per day or per event, so a GOTA
+  station starts each session with a clean table without losing the last one.
+  The picker above the log chooses which session the table, the stats and the
+  exports cover, or “All contacts” for everything at once. Nothing is ever
+  deleted by starting a new session.
 - **Control op callsign field** — the licensed op responsible for the station.
   Editable, remembered across sessions, shown in the header badge, and stamped
   onto each QSO as it's logged, so it drives `STATION_CALLSIGN` / `OPERATOR` in
@@ -88,6 +93,32 @@ Your log lives in `localStorage` and is not touched by Force Refresh.
 is written never to cache it — so opening `https://qso.tavaone.com/version.json`
 directly tells you what the *server* is serving, independent of anything cached
 on the device.
+
+---
+
+## Operating sessions
+
+Every QSO belongs to a session. The bar above the log picks which one you are
+looking at:
+
+- **+ NEW SESSION** names a session (today's date by default), makes it active,
+  and gives you an empty table. The previous session's contacts stay exactly
+  where they were.
+- **RENAME** retitles the session you are viewing — handy when “2026-09-20”
+  should read “Field Day GOTA”.
+- **REMOVE** appears only on a session with no contacts in it. It is there to
+  undo a mis-tap, not to clear a log; contacts are only ever deleted one row at
+  a time with DEL.
+- **All contacts** shows every session together. New QSOs still go into the
+  active session, and the bar says which one that is.
+
+The stats strip, the search box and both exports follow whatever the picker is
+showing. Export filenames carry the session name, CSV gains a `Session` column,
+and ADIF records carry `APP_TAVAONE_SESSION`.
+
+An existing flat log is folded into one session per day it was worked the first
+time this version loads — the shape the log was already in implicitly, so
+nothing moves and nothing is lost.
 
 ---
 
