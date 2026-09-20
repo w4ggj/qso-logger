@@ -1093,15 +1093,18 @@ footer {
         </div>
 
         <div style="margin-top:14px;">
-          <div class="sec-label green" style="margin-top:0">CAT — Rig Control (IC-706MKIIG)</div>
+          <div class="sec-label green" style="margin-top:0">CAT &mdash; Rig Control</div>
+
+          <div style="margin-bottom:6px;">
+            <select id="rig-type" onchange="setRigType(this.value)" style="width:100%"
+              title="Which radio is on the other end of the cable">
+              <option value="civ">Icom CI-V &mdash; IC-706MKIIG</option>
+              <option value="yaesu">Yaesu CAT &mdash; FT-991A</option>
+            </select>
+          </div>
 
           <div class="rig-row">
-            <select id="rig-baud" title="CI-V baud — must match radio menu">
-              <option value="19200">19200</option>
-              <option value="9600">9600</option>
-              <option value="4800">4800</option>
-              <option value="1200">1200</option>
-            </select>
+            <select id="rig-baud"></select>
             <input type="text" id="rig-addr" value="58" maxlength="2" title="CI-V address (hex) — IC-706MKIIG = 58"
               style="width:52px;text-transform:uppercase" placeholder="58">
             <button class="btn btn-outline" id="rig-btn" onclick="rigToggle()" style="padding:7px 10px;font-size:0.62rem;flex:1">CONNECT RIG</button>
@@ -1123,10 +1126,24 @@ footer {
           <div class="udp-help" id="rig-help">
             Connects to the radio over the CAT cable using your browser's Web Serial API &mdash;
             no extra software needed. <strong>Chrome or Edge on desktop only</strong> (over HTTPS).<br><br>
-            On the radio, set <code>SET &rarr; CI-V Baud</code> to match the dropdown (19200 recommended) and keep
-            <code>CI-V Address = 58h</code>. Turn <code>CI-V Transceive = ON</code> so dial changes update instantly.<br><br>
+            <span class="rig-help-civ">
+              <strong>IC-706MKIIG.</strong> Set <code>SET &rarr; CI-V Baud</code> to match the dropdown
+              (19200 recommended) and keep <code>CI-V Address = 58h</code>. Turn
+              <code>CI-V Transceive = ON</code> so dial changes update instantly.<br><br>
+            </span>
+            <span class="rig-help-yaesu">
+              <strong>FT-991A.</strong> Set <code>MENU 031 CAT RATE</code> to match the dropdown. The radio ships at
+              <strong>4800</strong>; 38400 is the usual choice once you change it. Leave
+              <code>MENU 033 CAT RTS</code> alone.<br><br>
+              The FT-991A's USB cable presents <strong>two</strong> serial ports. Pick the
+              <strong>Enhanced</strong> one in the browser prompt &mdash; that is the CAT port. The Standard port is
+              for PTT and will connect without ever answering.<br><br>
+              The 991A reports DATA and C4FM modes that the log's Mode list has no entry for. Those show in the
+              readout but are left for you to set, rather than guessing FT8 over PSK31 over JS8 and quietly
+              logging the wrong one.<br><br>
+            </span>
             Click <strong>CONNECT RIG</strong>, pick the CAT cable's serial port in the browser prompt, and the live
-            frequency, band, and mode fill in automatically as you tune. Uncheck <strong>Auto-fill</strong> to just
+            frequency, band, and mode fill in automatically as you tune. Switch <strong>Auto-fill</strong> off to just
             monitor without overwriting the entry fields.<br><br>
             <strong>Wheel tuning:</strong> click the <strong>Frequency</strong> field, then scroll the mouse wheel
             (or press <code>↑</code>/<code>↓</code>) to step the frequency &mdash; <code>Shift</code> for 100 Hz,
@@ -2290,15 +2307,36 @@ function dl(content, filename, type) {
 }
 
 /* ═══════════════════════════════════════════════════
-   CAT / CI-V RIG CONTROL  —  Icom IC-706MKIIG
-   Live frequency / mode / band over Web Serial.
-   Frame: FE FE <to> <from> <cmd> [data…] FD
-   Rig CI-V addr = 0x58 (default), controller = 0xE0.
+   CAT RIG CONTROL  —  Icom CI-V and Yaesu CAT
+   Live frequency / mode / band over Web Serial, and
+   wheel tuning sent back to the radio.
+
+   Two wire protocols behind one driver seam
+   (rigPoll / rigTuneSend / rigParse dispatch on
+   rigType; everything else is shared):
+
+     civ    Icom IC-706MKIIG — binary frames
+            FE FE <to> <from> <cmd> [data…] FD
+            rig addr 0x58, controller 0xE0
+
+     yaesu  Yaesu FT-991A — ASCII commands, each
+            terminated with ';'
+            FA;  → FA014250000;   (9 digits, Hz)
+            MD0; → MD02;          (one mode char)
    ═══════════════════════════════════════════════════ */
 const CIV_CTRL = 0xE0;
+
+const RIG_TYPE_KEY = 'w4ggj_rig_type';
+const RIG_TYPES = {
+  civ:   { bauds: [19200, 9600, 4800, 1200],  defBaud: 19200, addr: true,
+           baudTitle: 'CI-V baud — must match SET → CI-V Baud on the radio' },
+  yaesu: { bauds: [38400, 19200, 9600, 4800], defBaud: 4800,  addr: false,
+           baudTitle: 'CAT baud — must match MENU 031 CAT RATE on the radio' }
+};
+let rigType = 'civ';
 let rigPort = null, rigReader = null, rigWriter = null;
 let rigPollTimer = null, rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
-let rigModeLabel = '';
+let rigModeLabel = '', rigLastHz = 0;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
 
 function toggleAutofill() {
@@ -2314,6 +2352,55 @@ function paintAutofill() {
   el.setAttribute('aria-pressed', rigAutofill ? 'true' : 'false');
   const lbl = el.querySelector('.rig-toggle-lbl');
   if (lbl) lbl.textContent = 'Auto-fill: ' + (rigAutofill ? 'ON' : 'OFF');
+}
+
+/* Baud is remembered per rig type — the two radios don't run at the same rate.
+   'w4ggj_rig_baud' is the pre-FT-991A single-rig setting, honoured for Icom. */
+function rigBaudKey(t) { return 'w4ggj_rig_baud_' + t; }
+
+function savedRigBaud(t) {
+  let v = null;
+  try {
+    v = localStorage.getItem(rigBaudKey(t));
+    if (v == null && t === 'civ') v = localStorage.getItem('w4ggj_rig_baud');
+  } catch (e) {}
+  const n = parseInt(v, 10);
+  return RIG_TYPES[t].bauds.indexOf(n) !== -1 ? n : RIG_TYPES[t].defBaud;
+}
+
+function paintRigType() {
+  const spec = RIG_TYPES[rigType];
+  if ($('rig-type')) $('rig-type').value = rigType;
+
+  const baud = $('rig-baud');
+  if (baud) {
+    const want = savedRigBaud(rigType);
+    baud.innerHTML = '';
+    for (const b of spec.bauds) {
+      const o = document.createElement('option');
+      o.value = String(b);
+      o.textContent = String(b);
+      if (b === want) o.selected = true;
+      baud.appendChild(o);
+    }
+    baud.title = spec.baudTitle;
+  }
+
+  const addr = $('rig-addr');
+  if (addr) addr.style.display = spec.addr ? '' : 'none';   // CI-V address is Icom-only
+  document.querySelectorAll('.rig-help-civ').forEach(e => { e.style.display = spec.addr ? '' : 'none'; });
+  document.querySelectorAll('.rig-help-yaesu').forEach(e => { e.style.display = spec.addr ? 'none' : ''; });
+}
+
+function setRigType(t) {
+  if (!RIG_TYPES[t] || t === rigType) return;
+  if (rigConnected) {
+    try { localStorage.removeItem(RIG_AUTO_KEY); } catch (e) {}   // don't auto-open the old rig next load
+    rigDisconnect(false, 'Rig type changed');
+  }
+  rigType = t;
+  try { localStorage.setItem(RIG_TYPE_KEY, t); } catch (e) {}
+  paintRigType();
 }
 
 function rigSupported() { return 'serial' in navigator; }
@@ -2348,17 +2435,20 @@ async function rigConnect(port, auto) {
     return;
   }
   try {
-    const baud = parseInt($('rig-baud').value, 10) || 19200;
-    rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
-    if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
+    const spec = RIG_TYPES[rigType];
+    const baud = parseInt($('rig-baud').value, 10) || spec.defBaud;
+    if (spec.addr) {
+      rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
+      if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
+    }
     rigPort = port || await navigator.serial.requestPort();
     await rigPort.open({ baudRate: baud });
     rigWriter = rigPort.writable.getWriter();
     rigConnected = true;
     $('rig-btn').textContent = 'DISCONNECT';
     setRigStatus('ok', 'Connected — reading…');
-    localStorage.setItem('w4ggj_rig_baud', String(baud));
-    localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
+    localStorage.setItem(rigBaudKey(rigType), String(baud));
+    if (spec.addr) localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
     rememberRigPort();             // so a refresh can pick this cable back up
     rigReadLoop();                 // start listening (async, runs until disconnect)
     rigPoll();                     // immediate first read
@@ -2426,13 +2516,14 @@ async function rigDisconnect(silent, why) {
   try { if (rigWriter) { rigWriter.releaseLock(); } } catch (e) {}
   try { if (rigPort) { await rigPort.close(); } } catch (e) {}
   rigPort = rigReader = rigWriter = null;
-  rigConnected = false; rigBuf = []; rigModeLabel = '';
+  rigConnected = false; rigBuf = []; rigModeLabel = ''; rigLastHz = 0;
   const btn = $('rig-btn'); if (btn) btn.textContent = 'CONNECT RIG';
   setRigStatus('off', why || 'Not connected');
   if (!silent) toast(why || 'Rig disconnected');
 }
 
-async function rigSend(cmd, data) {
+/* ─── Icom CI-V: binary frames ─── */
+async function civSend(cmd, data) {
   if (!rigWriter) return;
   const f = [0xFE, 0xFE, rigCivAddr, CIV_CTRL, cmd];
   if (Array.isArray(data)) f.push(...data);
@@ -2442,7 +2533,28 @@ async function rigSend(cmd, data) {
   catch (e) { setRigStatus('err', 'Write error'); }
 }
 
-function rigPoll() { rigSend(0x03); rigSend(0x04); }   // read freq, read mode
+/* ─── Yaesu CAT: ASCII, ';'-terminated ─── */
+async function yaesuSend(str) {
+  if (!rigWriter) return;
+  try { await rigWriter.write(new TextEncoder().encode(str)); }
+  catch (e) { setRigStatus('err', 'Write error'); }
+}
+
+/* ─── Driver dispatch ─── */
+function rigPoll() {                                   // read freq, read mode
+  if (rigType === 'yaesu') { yaesuSend('FA;'); yaesuSend('MD0;'); }
+  else                     { civSend(0x03);   civSend(0x04);      }
+}
+
+function rigTuneSend(hz) {
+  if (rigType === 'yaesu') yaesuSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';');
+  else                     civSend(0x05, civEncodeFreq(hz));
+}
+
+function rigParse() {
+  if (rigType === 'yaesu') yaesuParse();
+  else                     civParse();
+}
 
 async function rigReadLoop() {
   try {
@@ -2455,7 +2567,7 @@ async function rigReadLoop() {
   } catch (e) { /* reader cancelled on disconnect */ }
 }
 
-function rigParse() {
+function civParse() {
   let start;
   while ((start = rigBuf.indexOf(0xFE)) !== -1) {
     if (rigBuf[start + 1] !== 0xFE) { rigBuf.splice(0, start + 1); continue; }
@@ -2463,26 +2575,51 @@ function rigParse() {
     if (end === -1) { if (start > 0) rigBuf.splice(0, start); break; }  // wait for rest
     const frame = rigBuf.slice(start, end + 1);
     rigBuf.splice(0, end + 1);
-    rigHandleFrame(frame);
+    civHandleFrame(frame);
   }
   if (rigBuf.length > 512) rigBuf = [];   // safety valve
 }
 
-function rigHandleFrame(f) {
+/* Yaesu replies are text. Split on ';', keep any unterminated tail for the
+   next chunk. The 991A answers queries only — nothing to echo-filter. */
+function yaesuParse() {
+  let s = '';
+  for (const b of rigBuf) s += String.fromCharCode(b);
+  let i;
+  while ((i = s.indexOf(';')) !== -1) {
+    yaesuHandleMsg(s.slice(0, i));
+    s = s.slice(i + 1);
+  }
+  rigBuf = [];
+  for (let k = 0; k < s.length; k++) rigBuf.push(s.charCodeAt(k));
+  if (rigBuf.length > 512) rigBuf = [];   // safety valve
+}
+
+/* 'FA014250000' → 14.2500 MHz ;  'MD02' → USB */
+function yaesuHandleMsg(msg) {
+  if (msg.slice(0, 2) === 'FA' && msg.length >= 11) {
+    const hz = parseInt(msg.slice(2, 11), 10);
+    if (hz) rigSetFreq(hz);
+  } else if (msg.slice(0, 3) === 'MD0' && msg.length >= 4) {
+    yaesuSetMode(msg.charAt(3).toUpperCase());
+  }
+}
+
+function civHandleFrame(f) {
   // FE FE <to> <from> <cmd> [data…] FD
   if (f.length < 6) return;
   const from = f[3], cmd = f[4];
   if (from !== rigCivAddr) return;         // only trust frames FROM the radio (ignores bus echo)
   const data = f.slice(5, f.length - 1);
   if (cmd === 0x03 || cmd === 0x00) {      // freq read reply, or transceive broadcast
-    const hz = rigDecodeFreq(data);
+    const hz = civDecodeFreq(data);
     if (hz) rigSetFreq(hz);
   } else if (cmd === 0x04 || cmd === 0x01) { // mode read reply, or transceive broadcast
-    if (data.length >= 1) rigSetMode(data[0]);
+    if (data.length >= 1) civSetMode(data[0]);
   }
 }
 
-function rigDecodeFreq(d) {
+function civDecodeFreq(d) {
   // little-endian packed BCD, 2 digits per byte
   if (d.length < 4) return 0;
   let hz = 0;
@@ -2490,8 +2627,8 @@ function rigDecodeFreq(d) {
   return hz;
 }
 
-/* Hz → 5 bytes of little-endian packed BCD (the inverse of rigDecodeFreq) */
-function rigEncodeFreq(hz) {
+/* Hz → 5 bytes of little-endian packed BCD (the inverse of civDecodeFreq) */
+function civEncodeFreq(hz) {
   const bytes = [];
   let v = Math.round(hz);
   for (let i = 0; i < 5; i++) {
@@ -2502,8 +2639,8 @@ function rigEncodeFreq(hz) {
   return bytes;
 }
 
-/* Send a tuned frequency to the radio (CI-V 0x05). Coalesced so a fast spin of
-   the wheel doesn't flood the CI-V bus — the newest target wins. */
+/* Send a tuned frequency to the radio. Coalesced so a fast spin of the wheel
+   doesn't flood the serial link — the newest target wins. */
 let rigTuneTimer = null, rigTuneTarget = 0;
 function rigTune(hz) {
   if (!rigConnected) return;
@@ -2511,17 +2648,36 @@ function rigTune(hz) {
   if (rigTuneTimer) return;
   rigTuneTimer = setTimeout(() => {
     rigTuneTimer = null;
-    rigSend(0x05, rigEncodeFreq(rigTuneTarget));
+    rigTuneSend(rigTuneTarget);
   }, 120);
 }
 
-const RIG_MODE_LABEL = { 0:'LSB', 1:'USB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW-R', 8:'RTTY-R' };
-const RIG_MODE_APP   = { 0:'SSB', 1:'SSB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW', 8:'RTTY' };
+const CIV_MODE_LABEL = { 0:'LSB', 1:'USB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW-R', 8:'RTTY-R' };
+const CIV_MODE_APP   = { 0:'SSB', 1:'SSB', 2:'AM', 3:'CW', 4:'RTTY', 5:'FM', 7:'CW', 8:'RTTY' };
+
+/* FT-991A mode codes — CAT reference manual, cross-checked against flrig's
+   FT991A driver. DATA-*, C4FM and DATA-FM have no entry in the log's Mode
+   list, so they are shown in the readout but left for the operator to set:
+   guessing FT8 over PSK31 over JS8 from "DATA-U" would quietly mislog. */
+const YAESU_MODE_LABEL = {
+  '1':'LSB',    '2':'USB',    '3':'CW-U',    '4':'FM',   '5':'AM',
+  '6':'RTTY-L', '7':'CW-L',   '8':'DATA-L',  '9':'RTTY-U',
+  'A':'DATA-FM','B':'FM-N',   'C':'DATA-U',  'D':'AM-N', 'E':'C4FM'
+};
+const YAESU_MODE_APP = {
+  '1':'SSB', '2':'SSB', '3':'CW', '4':'FM', '5':'AM',
+  '6':'RTTY', '7':'CW', '9':'RTTY', 'B':'FM', 'D':'AM'
+};
+
+function paintRigReadout() {
+  if (!rigConnected || !rigLastHz) return;
+  setRigStatus('ok', `${(rigLastHz / 1e6).toFixed(4)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
+}
 
 function rigSetFreq(hz) {
-  const mhz = hz / 1e6;
-  const mhzStr = mhz.toFixed(4);
-  setRigStatus('ok', `${mhzStr} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
+  const mhzStr = (hz / 1e6).toFixed(4);
+  rigLastHz = hz;
+  paintRigReadout();
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
@@ -2529,13 +2685,22 @@ function rigSetFreq(hz) {
   }
 }
 
-function rigSetMode(code) {
-  rigModeLabel = RIG_MODE_LABEL[code] || '';
-  const appMode = RIG_MODE_APP[code];
-  if (appMode && rigAutofill) {
-    const sel = $('inp-mode');
-    if ([...sel.options].some(o => o.value === appMode)) sel.value = appMode;
-  }
+function civSetMode(code) {
+  rigModeLabel = CIV_MODE_LABEL[code] || '';
+  paintRigReadout();
+  applyRigMode(CIV_MODE_APP[code]);
+}
+
+function yaesuSetMode(code) {
+  rigModeLabel = YAESU_MODE_LABEL[code] || '';
+  paintRigReadout();
+  applyRigMode(YAESU_MODE_APP[code]);
+}
+
+function applyRigMode(appMode) {
+  if (!appMode || !rigAutofill) return;
+  const sel = $('inp-mode');
+  if (sel && [...sel.options].some(o => o.value === appMode)) sel.value = appMode;
 }
 
 function toggleAccordion(id) {
@@ -2571,7 +2736,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-01-05';
+const APP_BUILD = '2026-09-20-06';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -2637,10 +2802,11 @@ refreshGotaList();
 
 /* Restore CAT settings + advertise browser support */
 (function initRig() {
-  const savedBaud = localStorage.getItem('w4ggj_rig_baud');
+  const savedType = localStorage.getItem(RIG_TYPE_KEY);
+  if (savedType && RIG_TYPES[savedType]) rigType = savedType;
   const savedAddr = localStorage.getItem('w4ggj_rig_addr');
-  if (savedBaud && $('rig-baud')) $('rig-baud').value = savedBaud;
   if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
+  paintRigType();                  // builds the baud list for this rig, restores its saved rate
   rigAutofill = localStorage.getItem('w4ggj_rig_autofill') !== '0';
   paintAutofill();
   if (!rigSupported()) {

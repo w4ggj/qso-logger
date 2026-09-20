@@ -18,14 +18,15 @@ student was on the mic.
   into the entry form (including its activation programs) for correction. Any
   half-typed next QSO is parked while you edit and restored when you save or
   cancel.
-- **Live CAT tracking (Icom IC-706MKIIG)** — reads frequency, mode, and band
-  straight from the radio over the CAT cable using the browser's Web Serial API
-  (Chrome/Edge desktop). No extra software. The connection is picked back up
-  automatically after a page refresh — the browser remembers the port, so no
-  second trip through the port picker.
+- **Live CAT tracking** — reads frequency, mode, and band straight from the
+  radio over the CAT cable using the browser's Web Serial API (Chrome/Edge
+  desktop). No extra software. Two radios are supported, picked in Settings:
+  **Icom IC-706MKIIG** (CI-V) and **Yaesu FT-991A** (Yaesu CAT). The connection
+  is picked back up automatically after a page refresh — the browser remembers
+  the port, so no second trip through the port picker.
 - **Wheel tuning** — click the Frequency field, then scroll (or press `↑`/`↓`)
   to step the dial: 1 kHz, `Shift` 100 Hz, `Alt` 10 kHz. With the rig connected
-  each step is sent to the radio over CI-V, so the wheel is the VFO knob.
+  each step is sent to the radio, so the wheel is the VFO knob.
 - **Band quick-jump** — one tap per band. Each band remembers the last frequency
   you were on, so hopping away and back returns you to your own frequency
   instead of a canned one; connected rigs retune to it.
@@ -87,6 +88,35 @@ Your log lives in `localStorage` and is not touched by Force Refresh.
 is written never to cache it — so opening `https://qso.tavaone.com/version.json`
 directly tells you what the *server* is serving, independent of anything cached
 on the device.
+
+---
+
+## Rig setup
+
+Pick the radio in **Settings → CAT — Rig Control**, set the baud to match the
+radio's menu, then click **CONNECT RIG** and choose the cable's serial port.
+
+| | Icom IC-706MKIIG | Yaesu FT-991A |
+|---|---|---|
+| Protocol | CI-V, binary frames | Yaesu CAT, ASCII terminated with `;` |
+| Radio menu | `SET → CI-V Baud` | `MENU 031 CAT RATE` |
+| Rates | 19200 / 9600 / 4800 / 1200 | 38400 / 19200 / 9600 / 4800 |
+| Ships at | — | **4800** |
+| Address | CI-V address `58h` | not used |
+| Also set | `CI-V Transceive = ON` | — |
+
+The FT-991A's USB cable presents **two** serial ports. Choose the **Enhanced**
+one — that is CAT. The Standard port is for PTT; it will open without ever
+answering, which looks like a connected radio that never reports anything.
+
+The 991A reports `DATA-L` / `DATA-U` / `DATA-FM` and `C4FM`, which have no
+entry in the log's Mode list. Those appear in the readout but do not touch the
+Mode field: picking FT8 over PSK31 over JS8 from "DATA-U" would be a guess, and
+a wrong guess gets logged silently.
+
+Adding another radio means one entry in `RIG_TYPES` plus a branch in each of
+`rigPoll`, `rigTuneSend` and `rigParse` — everything else (connect, reconnect,
+polling, wheel tuning, band memory, autofill) is shared.
 
 ---
 

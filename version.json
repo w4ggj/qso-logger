@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-01-05",
-  "notes": "Build stamp + stale-copy detection and Force Refresh"
+  "build": "2026-09-20-06",
+  "notes": "FT-991A (Yaesu CAT) rig support alongside Icom CI-V"
 }
