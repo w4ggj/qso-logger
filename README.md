@@ -136,6 +136,32 @@ radio's menu, then click **CONNECT RIG** and choose the cable's serial port.
 | Address | CI-V address `58h` | not used |
 | Also set | `CI-V Transceive = ON` | — |
 
+### Android
+
+Chrome on Android implements Web Serial for Bluetooth RFCOMM only, so its port
+list shows paired Bluetooth devices and a CAT cable never appears there. Set
+**Connection** to **USB direct** and the app drives the cable's USB-serial chip
+over WebUSB instead — the same approach [FT8AF](https://www.ft8af.app/) takes
+through the platform's USB host API for its CAT control. You need a USB-OTG adapter, and the phone
+must supply bus power to the cable.
+
+Chips handled: `CH340/CH341`, `CP210x`, `FTDI`, `PL2303`, and plain `CDC-ACM`
+as a fallback. The status line names the chip it matched and prints the raw
+`VID:PID` when it matches none, so an unsupported cable identifies itself
+rather than failing silently.
+
+On connect the app raises **DTR** and leaves **RTS** down. Plenty of cables
+take their power from a handshake line, but RTS is also what hardware PTT
+interfaces key on, and a stuck transmit is a worse failure than a dead cable
+— so if the cable connects and reports nothing, that is the first thing to
+change.
+
+Register values for each chip come from the
+[mik3y/usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android)
+drivers rather than being derived, since a wrong baud divisor yields
+plausible-looking garbage rather than an error. The unit tests assert the exact
+control transfers against those references.
+
 The FT-991A's USB cable presents **two** serial ports. Choose the **Enhanced**
 one — that is CAT. The Standard port is for PTT; it will open without ever
 answering, which looks like a connected radio that never reports anything.

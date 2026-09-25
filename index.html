@@ -1125,6 +1125,14 @@ footer {
             </select>
           </div>
 
+          <div style="margin-bottom:6px;" id="rig-link-row">
+            <select id="rig-link" onchange="setRigLink(this.value)" style="width:100%"
+              title="How to reach the cable">
+              <option value="serial">Serial port &mdash; desktop</option>
+              <option value="usb">USB direct &mdash; Android</option>
+            </select>
+          </div>
+
           <div class="rig-row">
             <select id="rig-baud"></select>
             <input type="text" id="rig-addr" value="58" maxlength="2" title="CI-V address (hex) — IC-706MKIIG = 58"
@@ -1164,6 +1172,17 @@ footer {
               readout but are left for you to set, rather than guessing FT8 over PSK31 over JS8 and quietly
               logging the wrong one.<br><br>
             </span>
+            <strong>Android.</strong> Chrome on Android has no USB path in the Web Serial API &mdash; its port list
+            only shows Bluetooth devices, so a CAT cable never appears there. Switch
+            <strong>Connection</strong> to <strong>USB direct</strong> and the app talks to the cable's chip over
+            WebUSB instead, the same way FT8AF drives CAT on Android. You will need a USB-OTG adapter,
+            and the phone has to supply bus power to the cable.<br><br>
+            Known chips: <code>CH340/CH341</code>, <code>CP210x</code>, <code>FTDI</code>, <code>PL2303</code> and
+            plain <code>CDC-ACM</code>. The readout names the chip it found, and shows the raw
+            <code>VID:PID</code> when it does not recognise one &mdash; send me those four digits and I can add it.
+            On connect the app raises <strong>DTR</strong> and leaves <strong>RTS</strong> down, since RTS is the
+            line hardware PTT interfaces usually key on; if your cable draws its power from RTS this is where to
+            look first.<br><br>
             Click <strong>CONNECT RIG</strong>, pick the CAT cable's serial port in the browser prompt, and the live
             frequency, band, and mode fill in automatically as you tune. Switch <strong>Auto-fill</strong> off to just
             monitor without overwriting the entry fields.<br><br>
@@ -2518,7 +2537,236 @@ function dl(content, filename, type) {
    ═══════════════════════════════════════════════════ */
 const CIV_CTRL = 0xE0;
 
+/* ═══════════════════════════════════════════════════
+   USB-SERIAL OVER WebUSB
+
+   Chrome on Android implements Web Serial for Bluetooth
+   RFCOMM only - a CAT cable plugged into the phone never
+   shows up in navigator.serial.getPorts(). WebUSB is
+   supported there, though, so the cable's USB-serial chip
+   can be driven directly: claim the interface, configure
+   the chip with its own control transfers, then move bytes
+   over the bulk endpoints. That is what FT8AF does through
+   Android's USB host API.
+
+   Register values below are taken from the mik3y
+   usb-serial-for-android drivers rather than derived - a
+   wrong baud divisor produces plausible-looking garbage
+   rather than an error.
+
+   Untested against real hardware: nothing here has met a
+   physical cable. The readout names the chip it matched
+   and prints VID:PID when it matches none, so an
+   unsupported cable reports itself instead of failing
+   silently.
+   ═══════════════════════════════════════════════════ */
+const USB_LINE_8N1 = { bits: 8, parity: 0, stop: 0 };
+
+/* On connect: DTR up, RTS down. Plenty of cables take their power from a
+   handshake line, but RTS is also the line hardware PTT interfaces key on,
+   and a stuck transmit is a worse first experience than a dead cable. */
+const USB_DTR = true, USB_RTS = false;
+
+function usbBulkEndpoints(iface) {
+  let epIn = 0, epOut = 0, packet = 64;
+  for (const ep of iface.alternate.endpoints) {
+    if (ep.type !== 'bulk') continue;
+    if (ep.direction === 'in'  && !epIn)  { epIn  = ep.endpointNumber; packet = ep.packetSize || 64; }
+    if (ep.direction === 'out' && !epOut) { epOut = ep.endpointNumber; }
+  }
+  return { epIn, epOut, packet };
+}
+
+function usbIface(dev, cls) {
+  return dev.configuration.interfaces.find(i => i.alternate.interfaceClass === cls) || null;
+}
+
+/* ─── CH340 / CH341 (Qinheng) ─── */
+async function ch340Baud(dev, baud) {
+  let factor, divisor;
+  if (baud === 921600) { divisor = 7; factor = 0xf300; }
+  else {
+    factor = Math.floor(1532620800 / baud);
+    divisor = 3;
+    while (factor > 0xfff0 && divisor > 0) { factor >>= 3; divisor--; }
+    if (factor > 0xfff0) throw new Error('CH340 cannot do ' + baud + ' baud');
+    factor = 0x10000 - factor;
+  }
+  divisor |= 0x0080;                       // else a CH341A waits for a full buffer
+  const vOut = (factor & 0xff00) | divisor;
+  await ch340Out(dev, 0x9a, 0x1312, vOut);
+  await ch340Out(dev, 0x9a, 0x0f2c, factor & 0xff);
+}
+function ch340Out(dev, request, value, index) {
+  return dev.controlTransferOut({ requestType: 'vendor', recipient: 'device', request, value, index });
+}
+function ch340In(dev, request, value, index, len) {
+  return dev.controlTransferIn({ requestType: 'vendor', recipient: 'device', request, value, index }, len);
+}
+
+const USB_SERIAL_DRIVERS = [
+  {
+    name: 'CH340/CH341', vid: 0x1a86, pids: [0x7523, 0x5523, 0x7522],
+    async init(dev, baud) {
+      const iface = dev.configuration.interfaces[0];
+      await dev.claimInterface(iface.interfaceNumber);
+      const lcr = 0x80 | 0x40 | 0x03;                   // RX + TX enabled, 8 data bits
+      await ch340In(dev, 0x5f, 0, 0, 2);
+      await ch340Out(dev, 0xa1, 0, 0);
+      await ch340Baud(dev, baud);
+      await ch340In(dev, 0x95, 0x2518, 0, 2);
+      await ch340Out(dev, 0x9a, 0x2518, lcr);
+      await ch340In(dev, 0x95, 0x0706, 0, 2);
+      await ch340Out(dev, 0xa1, 0x501f, 0xd90a);
+      await ch340Baud(dev, baud);
+      // The chip wants the complement of the wanted lines (DTR 0x20, RTS 0x40)
+      await ch340Out(dev, 0xa4, (~((USB_DTR ? 0x20 : 0) | (USB_RTS ? 0x40 : 0))) & 0xffff, 0);
+      return Object.assign({ iface: iface.interfaceNumber, header: 0 }, usbBulkEndpoints(iface));
+    }
+  },
+  {
+    name: 'CP210x', vid: 0x10c4, pids: [0xea60, 0xea70, 0xea71],
+    async init(dev, baud) {
+      const iface = dev.configuration.interfaces[0];
+      const n = iface.interfaceNumber;
+      await dev.claimInterface(n);
+      const out = (request, value, data) => dev.controlTransferOut(
+        { requestType: 'vendor', recipient: 'device', request, value, index: n }, data);
+      await out(0x00, 0x0001);                          // IFC_ENABLE
+      const b = new Uint8Array(4);
+      new DataView(b.buffer).setUint32(0, baud, true);
+      await out(0x1e, 0x0000, b);                       // SET_BAUDRATE, 32-bit LE
+      await out(0x03, 0x0800);                          // SET_LINE_CTL: 8 data bits, no parity, 1 stop
+      return Object.assign({ iface: n, header: 0 }, usbBulkEndpoints(iface));
+    }
+  },
+  {
+    name: 'FTDI', vid: 0x0403, pids: [0x6001, 0x6010, 0x6011, 0x6014, 0x6015],
+    async init(dev, baud) {
+      const iface = dev.configuration.interfaces[0];
+      await dev.claimInterface(iface.interfaceNumber);
+      const port = 1;
+      const out = (request, value, index) => dev.controlTransferOut(
+        { requestType: 'vendor', recipient: 'device', request, value, index });
+
+      // 24 MHz clock, 3-bit sub-integer divisor packed into the top of wValue
+      let divisor, sub;
+      if (baud >= 2500000)      { divisor = 0; sub = 0; }
+      else if (baud >= 1750000) { divisor = 1; sub = 0; }
+      else {
+        // integer division first, exactly as the reference does — a float here
+        // would drift the divisor for baud rates that don't divide 48 MHz evenly
+        divisor = (Math.floor(48000000 / baud) + 1) >> 1;
+        sub = divisor & 0x07;
+        divisor >>= 3;
+        if (divisor > 0x3fff) throw new Error('FTDI cannot do ' + baud + ' baud');
+      }
+      const SUBHI = { 0: 0x0000, 4: 0x4000, 2: 0x8000, 1: 0xc000,
+                      3: 0x0000, 5: 0x4000, 6: 0x8000, 7: 0xc000 };
+      let value = (divisor | SUBHI[sub]) & 0xffff;
+      let index = (sub >= 3 && sub !== 4) ? 1 : 0;
+
+      await out(0, 0, port);                            // RESET_ALL
+      await out(1, (USB_DTR ? 0x0101 : 0x0100) , port); // MODEM_CTRL: DTR
+      await out(1, (USB_RTS ? 0x0202 : 0x0200) , port); // MODEM_CTRL: RTS
+      await out(3, value, index);                       // SET_BAUD_RATE
+      await out(4, 0x0008, port);                       // SET_DATA: 8N1
+      // Every bulk IN packet starts with two modem-status bytes
+      return Object.assign({ iface: iface.interfaceNumber, header: 2 }, usbBulkEndpoints(iface));
+    }
+  },
+  {
+    name: 'PL2303', vid: 0x067b, pids: [0x2303, 0x23a3, 0x23b3, 0x23c3, 0x23d3, 0x23e3, 0x23f3],
+    async init(dev, baud) {
+      const iface = dev.configuration.interfaces[0];
+      const n = iface.interfaceNumber;
+      await dev.claimInterface(n);
+      const line = new Uint8Array(7);
+      new DataView(line.buffer).setUint32(0, baud, true);
+      line[4] = 0; line[5] = 0; line[6] = 8;            // 1 stop bit, no parity, 8 data bits
+      await dev.controlTransferOut(
+        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: n }, line);
+      await dev.controlTransferOut(
+        { requestType: 'class', recipient: 'interface', request: 0x22,
+          value: (USB_DTR ? 1 : 0) | (USB_RTS ? 2 : 0), index: n });
+      return Object.assign({ iface: n, header: 0 }, usbBulkEndpoints(iface));
+    }
+  },
+  {
+    /* Plain USB CDC-ACM. Last resort: Android may already have claimed one of
+       these with its own driver, in which case claimInterface throws. */
+    name: 'CDC-ACM', cdc: true,
+    async init(dev, baud) {
+      const ctrl = usbIface(dev, 0x02);
+      const data = usbIface(dev, 0x0a) || dev.configuration.interfaces[0];
+      const cn = ctrl ? ctrl.interfaceNumber : data.interfaceNumber;
+      await dev.claimInterface(data.interfaceNumber);
+      if (ctrl && ctrl.interfaceNumber !== data.interfaceNumber) {
+        try { await dev.claimInterface(ctrl.interfaceNumber); } catch (e) {}
+      }
+      const line = new Uint8Array(7);
+      new DataView(line.buffer).setUint32(0, baud, true);
+      line[4] = 0; line[5] = 0; line[6] = 8;
+      await dev.controlTransferOut(
+        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: cn }, line);
+      await dev.controlTransferOut(
+        { requestType: 'class', recipient: 'interface', request: 0x22,
+          value: (USB_DTR ? 1 : 0) | (USB_RTS ? 2 : 0), index: cn });
+      return Object.assign({ iface: data.interfaceNumber, header: 0 }, usbBulkEndpoints(data));
+    }
+  }
+];
+
+function usbHex(n) { return '0x' + n.toString(16).padStart(4, '0'); }
+
+function usbDriverFor(dev) {
+  for (const d of USB_SERIAL_DRIVERS) {
+    if (d.cdc) continue;
+    if (d.vid === dev.vendorId && d.pids.indexOf(dev.productId) !== -1) return d;
+  }
+  // Unknown chip: a CDC-ACM interface is the one thing worth trying blind
+  if (usbIface(dev, 0x0a) || usbIface(dev, 0x02)) return USB_SERIAL_DRIVERS[USB_SERIAL_DRIVERS.length - 1];
+  return null;
+}
+
+/* Opens `dev` and hands back the same little read/write/close shape the Web
+   Serial path uses, so everything above the transport stays identical. */
+async function usbOpenLink(dev, baud) {
+  await dev.open();
+  if (!dev.configuration) await dev.selectConfiguration(1);
+  const drv = usbDriverFor(dev);
+  if (!drv) throw new Error(`Unsupported cable ${usbHex(dev.vendorId)}:${usbHex(dev.productId)}`);
+  const cfg = await drv.init(dev, baud);
+  if (!cfg.epIn || !cfg.epOut) throw new Error(drv.name + ': no bulk endpoints');
+
+  let closed = false;
+  return {
+    kind: 'usb',
+    label: `${drv.name} ${usbHex(dev.vendorId)}:${usbHex(dev.productId)}`,
+    device: dev,
+    async write(bytes) { await dev.transferOut(cfg.epOut, bytes); },
+    async read() {
+      while (!closed) {
+        let r;
+        try { r = await dev.transferIn(cfg.epIn, cfg.packet); }
+        catch (e) { return null; }                       // device gone or closed
+        if (r.status === 'stall') { await dev.clearHalt('in', cfg.epIn); continue; }
+        if (!r.data || r.data.byteLength <= cfg.header) continue;   // FTDI idles as 2 status bytes
+        return new Uint8Array(r.data.buffer, r.data.byteOffset + cfg.header,
+                              r.data.byteLength - cfg.header);
+      }
+      return null;
+    },
+    async close() {
+      closed = true;
+      try { await dev.releaseInterface(cfg.iface); } catch (e) {}
+      try { await dev.close(); } catch (e) {}
+    }
+  };
+}
+
 const RIG_TYPE_KEY = 'w4ggj_rig_type';
+const RIG_LINK_KEY = 'w4ggj_rig_link';
 const RIG_TYPES = {
   civ:   { bauds: [19200, 9600, 4800, 1200],  defBaud: 19200, addr: true,
            baudTitle: 'CI-V baud — must match SET → CI-V Baud on the radio' },
@@ -2527,6 +2775,8 @@ const RIG_TYPES = {
 };
 let rigType = 'civ';
 let rigPort = null, rigReader = null, rigWriter = null;
+let rigLink = null;                 // active transport: Web Serial or WebUSB
+let rigLinkKind = 'serial';         // which one the user picked
 let rigPollTimer = null, rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '', rigLastHz = 0;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
@@ -2584,6 +2834,28 @@ function paintRigType() {
   document.querySelectorAll('.rig-help-yaesu').forEach(e => { e.style.display = spec.addr ? 'none' : ''; });
 }
 
+function usbSupported() { return !!navigator.usb; }
+
+function paintRigLink() {
+  const sel = $('rig-link');
+  if (sel) sel.value = rigLinkKind;
+  const row = $('rig-link-row');
+  // Nothing to choose when the browser has no WebUSB — the serial path is it
+  if (row) row.style.display = usbSupported() ? '' : 'none';
+}
+
+function setRigLink(v) {
+  if (v !== 'serial' && v !== 'usb') return;
+  if (v === rigLinkKind) return;
+  if (rigConnected) {
+    try { localStorage.removeItem(RIG_AUTO_KEY); } catch (e) {}
+    rigDisconnect(false, 'Connection changed');
+  }
+  rigLinkKind = v;
+  try { localStorage.setItem(RIG_LINK_KEY, v); } catch (e) {}
+  paintRigLink();
+}
+
 function setRigType(t) {
   if (!RIG_TYPES[t] || t === rigType) return;
   if (rigConnected) {
@@ -2633,21 +2905,46 @@ async function rigConnect(port, auto) {
       rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
       if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
     }
-    rigPort = port || await navigator.serial.requestPort();
-    await rigPort.open({ baudRate: baud });
-    rigWriter = rigPort.writable.getWriter();
+    if (rigLinkKind === 'usb') {
+      if (!usbSupported()) throw new Error('This browser has no WebUSB');
+      // filters:[] so an unrecognised cable can still be picked and named
+      const dev = port || await navigator.usb.requestDevice({ filters: [] });
+      rigLink = await usbOpenLink(dev, baud);
+    } else {
+      rigPort = port || await navigator.serial.requestPort();
+      await rigPort.open({ baudRate: baud });
+      rigWriter = rigPort.writable.getWriter();
+      rigLink = {
+        kind: 'serial', label: 'Serial port', port: rigPort,
+        write: bytes => rigWriter.write(bytes),
+        read: async () => {
+          if (!rigReader) rigReader = rigPort.readable.getReader();
+          const { value, done } = await rigReader.read();
+          return done ? null : value;
+        },
+        close: async () => {
+          try { if (rigReader) { await rigReader.cancel(); rigReader.releaseLock(); } } catch (e) {}
+          try { if (rigWriter) rigWriter.releaseLock(); } catch (e) {}
+          try { await rigPort.close(); } catch (e) {}
+        }
+      };
+    }
     rigConnected = true;
     $('rig-btn').textContent = 'DISCONNECT';
-    setRigStatus('ok', 'Connected — reading…');
+    setRigStatus('ok', `Connected (${rigLink.label}) — reading…`);
     localStorage.setItem(rigBaudKey(rigType), String(baud));
+    localStorage.setItem(RIG_LINK_KEY, rigLinkKind);
     if (spec.addr) localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
     rememberRigPort();             // so a refresh can pick this cable back up
     rigReadLoop();                 // start listening (async, runs until disconnect)
     rigPoll();                     // immediate first read
     rigPollTimer = setInterval(rigPoll, 750);
-    if (navigator.serial && !rigConnect._wired) {
-      navigator.serial.addEventListener('disconnect', e => {
+    if (!rigConnect._wired) {
+      if (navigator.serial) navigator.serial.addEventListener('disconnect', e => {
         if (rigPort && e.target === rigPort) rigDisconnect(false, 'Cable unplugged');
+      });
+      if (navigator.usb) navigator.usb.addEventListener('disconnect', e => {
+        if (rigLink && rigLink.device && e.device === rigLink.device) rigDisconnect(false, 'Cable unplugged');
       });
       rigConnect._wired = true;
     }
@@ -2672,7 +2969,8 @@ const RIG_USB_KEY  = 'w4ggj_rig_usb';
 
 function portTag(port) {
   try {
-    const i = port.getInfo && port.getInfo();
+    if (port && port.vendorId != null) return port.vendorId + ':' + port.productId;   // WebUSB device
+    const i = port && port.getInfo && port.getInfo();                                 // Web Serial port
     if (i && i.usbVendorId != null) return i.usbVendorId + ':' + i.usbProductId;
   } catch (e) {}
   return '';
@@ -2681,16 +2979,19 @@ function portTag(port) {
 function rememberRigPort() {
   try {
     localStorage.setItem(RIG_AUTO_KEY, '1');
-    const tag = portTag(rigPort);
+    const tag = portTag(rigLinkKind === 'usb' ? (rigLink && rigLink.device) : rigPort);
     if (tag) localStorage.setItem(RIG_USB_KEY, tag);
   } catch (e) {}
 }
 
 async function rigAutoReconnect() {
-  if (!rigSupported()) return;
   if (localStorage.getItem(RIG_AUTO_KEY) !== '1') return;
+  if (rigLinkKind === 'usb' ? !usbSupported() : !rigSupported()) return;
   try {
-    const ports = await navigator.serial.getPorts();   // already granted — no prompt
+    // Already-granted devices — neither call needs a user gesture
+    const ports = rigLinkKind === 'usb'
+      ? await navigator.usb.getDevices()
+      : await navigator.serial.getPorts();
     if (!ports.length) return;
     const want = localStorage.getItem(RIG_USB_KEY);
     const port = (want && ports.find(p => portTag(p) === want)) || ports[0];
@@ -2703,10 +3004,8 @@ async function rigAutoReconnect() {
 
 async function rigDisconnect(silent, why) {
   if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
-  try { if (rigReader) { await rigReader.cancel(); } } catch (e) {}
-  try { if (rigReader) { rigReader.releaseLock(); } } catch (e) {}
-  try { if (rigWriter) { rigWriter.releaseLock(); } } catch (e) {}
-  try { if (rigPort) { await rigPort.close(); } } catch (e) {}
+  try { if (rigLink) await rigLink.close(); } catch (e) {}
+  rigLink = null;
   rigPort = rigReader = rigWriter = null;
   rigConnected = false; rigBuf = []; rigModeLabel = ''; rigLastHz = 0;
   const btn = $('rig-btn'); if (btn) btn.textContent = 'CONNECT RIG';
@@ -2716,19 +3015,19 @@ async function rigDisconnect(silent, why) {
 
 /* ─── Icom CI-V: binary frames ─── */
 async function civSend(cmd, data) {
-  if (!rigWriter) return;
+  if (!rigLink) return;
   const f = [0xFE, 0xFE, rigCivAddr, CIV_CTRL, cmd];
   if (Array.isArray(data)) f.push(...data);
   else if (data !== undefined) f.push(data);
   f.push(0xFD);
-  try { await rigWriter.write(new Uint8Array(f)); }
+  try { await rigLink.write(new Uint8Array(f)); }
   catch (e) { setRigStatus('err', 'Write error'); }
 }
 
 /* ─── Yaesu CAT: ASCII, ';'-terminated ─── */
 async function yaesuSend(str) {
-  if (!rigWriter) return;
-  try { await rigWriter.write(new TextEncoder().encode(str)); }
+  if (!rigLink) return;
+  try { await rigLink.write(new TextEncoder().encode(str)); }
   catch (e) { setRigStatus('err', 'Write error'); }
 }
 
@@ -2749,14 +3048,14 @@ function rigParse() {
 }
 
 async function rigReadLoop() {
+  const link = rigLink;
   try {
-    rigReader = rigPort.readable.getReader();
-    while (true) {
-      const { value, done } = await rigReader.read();
-      if (done) break;
+    while (link && link === rigLink) {
+      const value = await link.read();
+      if (value === null) break;
       if (value && value.length) { for (const b of value) rigBuf.push(b); rigParse(); }
     }
-  } catch (e) { /* reader cancelled on disconnect */ }
+  } catch (e) { /* cancelled on disconnect */ }
 }
 
 function civParse() {
@@ -2928,7 +3227,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-20-07';
+const APP_BUILD = '2026-09-25-08';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -2998,15 +3297,18 @@ refreshGotaList();
 (function initRig() {
   const savedType = localStorage.getItem(RIG_TYPE_KEY);
   if (savedType && RIG_TYPES[savedType]) rigType = savedType;
+  const savedLink = localStorage.getItem(RIG_LINK_KEY);
+  if (savedLink === 'usb' || savedLink === 'serial') rigLinkKind = savedLink;
+  paintRigLink();
   const savedAddr = localStorage.getItem('w4ggj_rig_addr');
   if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
   paintRigType();                  // builds the baud list for this rig, restores its saved rate
   rigAutofill = localStorage.getItem('w4ggj_rig_autofill') !== '0';
   paintAutofill();
-  if (!rigSupported()) {
+  if (!rigSupported() && !usbSupported()) {
     const btn = $('rig-btn');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
-    setRigStatus('off', 'Needs Chrome/Edge desktop');
+    setRigStatus('off', 'Needs Chrome or Edge');
   } else {
     setRigStatus('off', 'Not connected');
     rigAutoReconnect();            // pick the cable back up after a refresh
