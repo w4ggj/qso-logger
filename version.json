@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-25-09",
-  "notes": "The N-F callsign badge now says why a lookup failed"
+  "build": "2026-09-25-10",
+  "notes": "QRZ records whose name lives in name_fmt no longer read as not-found"
 }

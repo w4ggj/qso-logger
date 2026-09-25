@@ -2077,10 +2077,15 @@ function clearQrzFields() {
    the badge can explain itself \u2014 on a phone there is no tooltip to hover. */
 let lookupWhy = '';
 let lookupNudged = false;      // the "set up QRZ" toast fires once per load
+let lastQrzNote = '';          // whatever the proxy said about the last QRZ miss
 
 function explainLookup() {
   if (lookupWhy) toast(lookupWhy, 'wrn');
 }
+
+/* A record with only a QTH still beats N/F: it names the country and fills the
+   notes, which is most of what a DX record is good for. */
+function usableLookup(d) { return !!(d && (d.name || d.grid || d.country || d.city)); }
 
 async function lookupCallsign(call) {
   const badge = $('lookup-badge');
@@ -2088,20 +2093,21 @@ async function lookupCallsign(call) {
 
   // 1) QRZ first \u2014 only if a proxy URL + credentials are configured
   const haveQrz = qrzConfigured();
+  lastQrzNote = '';
   if (haveQrz) {
     const q = await qrzLookup(call);
-    if (q && (q.name || q.grid)) { applyLookup(q); return; }
+    if (usableLookup(q)) { applyLookup(q); return; }
     // otherwise fall through to the free callbooks
   }
 
   // 2) Free fallback \u2014 callook.info (US FCC), then HamDB (US/CA/AU/DE/CZ)
   const free = (await callookLookup(call)) || (await hamdbLookup(call));
-  if (free && (free.name || free.grid)) { applyLookup(free); return; }
+  if (usableLookup(free)) { applyLookup(free); return; }
 
   badge.className   = 'lookup-badge fail';
   badge.textContent = 'N/F';
   lookupWhy = haveQrz
-    ? `${call}: no match in QRZ or the free callbooks`
+    ? `${call}: no match in QRZ or the free callbooks` + (lastQrzNote ? ` — QRZ said "${lastQrzNote}"` : '')
     : `${call}: the free callbooks only cover US, CA, AU, DE and CZ. Set up QRZ in Settings to look up DX.`;
   badge.title = lookupWhy + '  (tap to show)';
   // Nudge once a session rather than on every miss \u2014 lookups fire while typing
@@ -2133,7 +2139,11 @@ async function qrzLookup(call, retried) {
       qrzSession = null;                 // refresh once, then retry
       return qrzLookup(call, true);
     }
-    if (res.ok && (data.name || data.grid)) return { ...data, source: 'qrz' };
+    if (res.ok && (data.name || data.grid || data.country || data.city)) {
+      return { ...data, source: 'qrz' };
+    }
+    // Hang on to what QRZ actually said — swallowing it left "N/F" unexplainable
+    lastQrzNote = (data && data.error) ? String(data.error).slice(0, 120) : '';
     return null;
   } catch (e) {
     console.warn('[QRZ] lookup error:', e.message);
@@ -3250,7 +3260,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-25-09';
+const APP_BUILD = '2026-09-25-10';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

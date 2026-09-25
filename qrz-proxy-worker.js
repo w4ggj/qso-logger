@@ -9,6 +9,9 @@
      POST /qrz/auth   {user,pass}          -> {session, sub} | {error}
      GET  /qrz/lookup?session=..&call=..   -> {name,grid,city,state,country,dxcc}
 
+   name falls back to QRZ's name_fmt when fname/name are blank, which is
+   common on non-US records; a record with only a QTH still comes back.
+
    The app sends your QRZ username/password to THIS worker over
    HTTPS; the worker talks to QRZ and hands back JSON. You can
    also set QRZ_USER / QRZ_PASS as Worker secrets and leave the
@@ -84,17 +87,25 @@ export default {
         return json({ session_expired: true, error: err }, 401);
       }
 
-      const name = [tag(xml, 'fname'), tag(xml, 'name')].filter(Boolean).join(' ').trim();
-      const grid = tag(xml, 'grid');
-      if (!name && !grid) return json({ error: err || 'Not found' });
+      /* fname+name is the usual shape, but plenty of non-US records leave those
+         blank and carry the whole name in name_fmt. Taking only fname+name made
+         such a record look like a miss - QRZ has it, the app said N/F. */
+      const name = [tag(xml, 'fname'), tag(xml, 'name')].filter(Boolean).join(' ').trim()
+                   || tag(xml, 'name_fmt');
+      const grid    = tag(xml, 'grid');
+      const country = tag(xml, 'country');
+      const city    = tag(xml, 'addr2');
+      /* A record with a QTH but no name and no grid is still worth having - it
+         names the country and fills the notes - so only a truly empty one fails. */
+      if (!name && !grid && !country && !city) return json({ error: err || 'Not found' });
 
       return json({
         source:  'qrz',
         name,
         grid,
-        city:    tag(xml, 'addr2'),
+        city,
         state:   tag(xml, 'state'),
-        country: tag(xml, 'country'),
+        country,
         dxcc:    tag(xml, 'dxcc'),
       });
     }
