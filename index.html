@@ -310,7 +310,8 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .lookup-badge.idle    { color: var(--muted); }
 .lookup-badge.busy    { color: var(--amber); background: var(--amber-soft); animation: pulse-badge 1s ease-in-out infinite; }
 .lookup-badge.ok      { color: var(--green); background: var(--green-glow); }
-.lookup-badge.fail    { color: var(--red);   background: var(--red-soft); }
+.lookup-badge.fail    { color: var(--red);   background: var(--red-soft);
+                        pointer-events: auto; cursor: pointer; }
 .lookup-badge.nokey   { color: var(--muted); }
 
 @keyframes pulse-badge { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
@@ -980,7 +981,7 @@ footer {
             <input type="text" id="inp-call" placeholder="KD9XYZ"
               maxlength="14" autocorrect="off" autocapitalize="characters" spellcheck="false"
               oninput="onCallInput(this.value)" onkeydown="onCallKey(event)">
-            <span class="lookup-badge idle" id="lookup-badge">QRZ</span>
+            <span class="lookup-badge idle" id="lookup-badge" onclick="explainLookup()">QRZ</span>
           </div>
         </div>
       </div>
@@ -1103,8 +1104,13 @@ footer {
           </div>
           <div class="qrz-help" id="qrz-help">
             Lookups try <strong>QRZ first</strong> (worldwide, needs a QRZ XML subscription), then fall back
-            automatically to the free <strong>callook.info</strong> and <strong>HamDB</strong> callbooks
-            (US coverage, no account) &mdash; so callsign info still fills in even with the QRZ fields left blank.<br><br>
+            automatically to the free <strong>callook.info</strong> (US FCC) and <strong>HamDB</strong>
+            (US, Canada, Australia, Germany, Czech Republic) callbooks &mdash; no account needed, so callsign info
+            still fills in with the QRZ fields left blank.<br><br>
+            Those are the only countries the free callbooks carry. A DX callsign outside them comes back
+            <span class="warn">N/F</span>, and QRZ is what fills that gap &mdash; tap the N/F badge and the app
+            says which it was. Note these settings live on the device, so a phone needs its own QRZ setup even
+            if the shack PC already has one.<br><br>
             <strong>To enable QRZ:</strong> deploy the included <code>qrz-proxy-worker.js</code> as a free
             Cloudflare Worker, paste its <code>&hellip;workers.dev</code> URL above, and enter your QRZ
             username/password. The worker keeps credentials off the public web and adds the CORS headers
@@ -2066,28 +2072,51 @@ function clearQrzFields() {
   $('inp-their-grid').classList.remove('qrz-filled');
 }
 
+/* The free callbooks only cover a handful of countries, so a DX callsign with
+   no QRZ set up looks exactly like a mistyped one. Keep the reason around so
+   the badge can explain itself \u2014 on a phone there is no tooltip to hover. */
+let lookupWhy = '';
+let lookupNudged = false;      // the "set up QRZ" toast fires once per load
+let lastQrzNote = '';          // whatever the proxy said about the last QRZ miss
+
+function explainLookup() {
+  if (lookupWhy) toast(lookupWhy, 'wrn');
+}
+
+/* A record with only a QTH still beats N/F: it names the country and fills the
+   notes, which is most of what a DX record is good for. */
+function usableLookup(d) { return !!(d && (d.name || d.grid || d.country || d.city)); }
+
 async function lookupCallsign(call) {
   const badge = $('lookup-badge');
   badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
 
   // 1) QRZ first \u2014 only if a proxy URL + credentials are configured
-  if (qrzConfigured()) {
+  const haveQrz = qrzConfigured();
+  lastQrzNote = '';
+  if (haveQrz) {
     const q = await qrzLookup(call);
-    if (q && (q.name || q.grid)) { applyLookup(q); return; }
+    if (usableLookup(q)) { applyLookup(q); return; }
     // otherwise fall through to the free callbooks
   }
 
-  // 2) Free fallback \u2014 callook.info (US FCC), then HamDB
+  // 2) Free fallback \u2014 callook.info (US FCC), then HamDB (US/CA/AU/DE/CZ)
   const free = (await callookLookup(call)) || (await hamdbLookup(call));
-  if (free && (free.name || free.grid)) { applyLookup(free); return; }
+  if (usableLookup(free)) { applyLookup(free); return; }
 
   badge.className   = 'lookup-badge fail';
   badge.textContent = 'N/F';
-  badge.title       = 'No data found for ' + call;
+  lookupWhy = haveQrz
+    ? `${call}: no match in QRZ or the free callbooks` + (lastQrzNote ? ` — QRZ said "${lastQrzNote}"` : '')
+    : `${call}: the free callbooks only cover US, CA, AU, DE and CZ. Set up QRZ in Settings to look up DX.`;
+  badge.title = lookupWhy + '  (tap to show)';
+  // Nudge once a session rather than on every miss \u2014 lookups fire while typing
+  if (!haveQrz && !lookupNudged) { lookupNudged = true; toast(lookupWhy, 'wrn'); }
 }
 
 function applyLookup(d) {
   const badge = $('lookup-badge');
+  lookupWhy = '';
   if (d.name) { $('inp-name').value = d.name; $('inp-name').classList.add('qrz-filled'); }
   if (d.grid) { $('inp-their-grid').value = d.grid; $('inp-their-grid').classList.add('qrz-filled'); }
   const loc = [d.city, d.state, d.country].filter(Boolean).join(', ');
@@ -2110,7 +2139,11 @@ async function qrzLookup(call, retried) {
       qrzSession = null;                 // refresh once, then retry
       return qrzLookup(call, true);
     }
-    if (res.ok && (data.name || data.grid)) return { ...data, source: 'qrz' };
+    if (res.ok && (data.name || data.grid || data.country || data.city)) {
+      return { ...data, source: 'qrz' };
+    }
+    // Hang on to what QRZ actually said — swallowing it left "N/F" unexplainable
+    lastQrzNote = (data && data.error) ? String(data.error).slice(0, 120) : '';
     return null;
   } catch (e) {
     console.warn('[QRZ] lookup error:', e.message);
@@ -3227,7 +3260,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-25-08';
+const APP_BUILD = '2026-09-25-10';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

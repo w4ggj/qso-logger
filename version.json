@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-25-08",
-  "notes": "WebUSB CAT path so an Android phone can drive the radio"
+  "build": "2026-09-25-10",
+  "notes": "QRZ records whose name lives in name_fmt no longer read as not-found"
 }
