@@ -181,8 +181,16 @@ polling, wheel tuning, band memory, autofill) is shared.
 
 Lookups try **QRZ first** (worldwide, needs a QRZ XML Data subscription), then
 fall back automatically to the free **callook.info** (US FCC) and **HamDB**
-callbooks. The free fallback needs no account, so lookups work even with the QRZ
-fields left blank.
+(US, Canada, Australia, Germany, Czech Republic) callbooks. The free fallback
+needs no account, so lookups work even with the QRZ fields left blank.
+
+Those five countries are the whole of the free coverage. A DX callsign outside
+them comes back **N/F** even though QRZ's website shows it fine — QRZ is what
+closes that gap. Tap the N/F badge and the app says which case it hit: no QRZ
+configured, or configured and genuinely not found anywhere.
+
+QRZ settings live in `localStorage`, so they are **per device**. A phone needs
+its own proxy URL and credentials even when the shack PC already has them.
 
 ### Enabling QRZ (optional) — Cloudflare Worker
 
