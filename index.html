@@ -2065,11 +2065,22 @@ function onCallKey(e) {
   }
 }
 
+/* Notes is the one auto-filled field you also type in, so it cannot just be
+   wiped with the rest. Remember the exact string a lookup put there; clear it
+   only while it is still untouched, and never touch what you wrote yourself. */
+let autoNotes = '';
+
 function clearQrzFields() {
   $('inp-name').value = '';
   $('inp-their-grid').value = '';
   $('inp-name').classList.remove('qrz-filled');
   $('inp-their-grid').classList.remove('qrz-filled');
+  const notes = $('inp-notes');
+  if (notes && autoNotes && notes.value === autoNotes) {
+    notes.value = '';
+    notes.classList.remove('qrz-filled');
+  }
+  autoNotes = '';          // anything left in there is the operator's now
 }
 
 /* The free callbooks only cover a handful of countries, so a DX callsign with
@@ -2123,7 +2134,11 @@ function applyLookup(d) {
   badge.className   = 'lookup-badge ok';
   badge.textContent = d.dxcc || '\u2713';
   badge.title       = (d.name || '') + (loc ? ' \u2014 ' + loc : '') + (d.source ? `  [${d.source}]` : '');
-  if (!$('inp-notes').value.trim() && loc) $('inp-notes').value = loc;
+  if (loc && !$('inp-notes').value.trim()) {
+    $('inp-notes').value = loc;
+    $('inp-notes').classList.add('qrz-filled');
+    autoNotes = loc;
+  }
 }
 
 /* QRZ via the Cloudflare Worker proxy. Returns data object, or null. */
@@ -2337,7 +2352,8 @@ const FORM_FIELDS = [
 
 function fillForm(src) {
   FORM_FIELDS.forEach(([key, id]) => { $(id).value = src[key] || ''; });
-  ['inp-name','inp-their-grid'].forEach(id => $(id).classList.remove('qrz-filled'));
+  ['inp-name','inp-their-grid','inp-notes'].forEach(id => $(id).classList.remove('qrz-filled'));
+  autoNotes = '';          // a logged QSO's notes belong to the record, not a lookup
   clearTimeout(lookupTimer);
   $('lookup-badge').className   = 'lookup-badge idle';
   $('lookup-badge').textContent = 'QRZ';
@@ -2414,7 +2430,8 @@ function clearForm(keepDt = false) {
   if (!keepDt) prefill();
   ['inp-call','inp-freq','inp-rst-s','inp-rst-r','inp-notes','inp-name','inp-their-grid']
     .forEach(id => $(id).value = '');
-  ['inp-name','inp-their-grid'].forEach(id => $(id).classList.remove('qrz-filled'));
+  ['inp-name','inp-their-grid','inp-notes'].forEach(id => $(id).classList.remove('qrz-filled'));
+  autoNotes = '';
   $('inp-band').value = '';
   $('inp-mode').value = '';
   $('lookup-badge').className = 'lookup-badge idle';
@@ -3260,7 +3277,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-25-10';
+const APP_BUILD = '2026-09-25-11';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

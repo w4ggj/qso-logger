@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-25-10",
-  "notes": "QRZ records whose name lives in name_fmt no longer read as not-found"
+  "build": "2026-09-25-11",
+  "notes": "Auto-filled notes clear with the callsign; typed notes are kept"
 }
