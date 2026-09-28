@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-25-11",
-  "notes": "Auto-filled notes clear with the callsign; typed notes are kept"
+  "build": "2026-09-28-12",
+  "notes": "Frequency shown and logged to 1 Hz instead of rounded to 100 Hz"
 }

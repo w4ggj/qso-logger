@@ -31,7 +31,12 @@ student was on the mic.
   the port, so no second trip through the port picker.
 - **Wheel tuning** — click the Frequency field, then scroll (or press `↑`/`↓`)
   to step the dial: 1 kHz, `Shift` 100 Hz, `Alt` 10 kHz. With the rig connected
-  each step is sent to the radio, so the wheel is the VFO knob.
+  each step is sent to the radio, so the wheel is the VFO knob. Steps snap onto
+  the step grid, so the first click from an off-grid frequency lands on a round
+  number rather than carrying the odd digits along.
+- **Frequency to 1 Hz** — the field carries all six decimal places, so a radio
+  sitting on 14.211650 logs and exports as 14.211650 rather than rounded to the
+  nearest 100 Hz.
 - **Band quick-jump** — one tap per band. Each band remembers the last frequency
   you were on, so hopping away and back returns you to your own frequency
   instead of a canned one; connected rigs retune to it.

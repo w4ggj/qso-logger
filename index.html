@@ -1568,6 +1568,11 @@ const FREQ_DEFAULT = 14200000;     // where an empty field starts
 let tuneHoldUntil = 0;             // ignore rig freq echoes just after a manual step
 let wheelAccum    = 0;
 
+/* 1 Hz resolution. Four decimals rounded to the nearest 100 Hz, so a radio
+   sitting on 14.211650 read back 14.2117 - and that rounded string is what the
+   field holds, so it is what gets logged and written to ADIF, not just shown. */
+function fmtMhz(hz) { return (hz / 1e6).toFixed(6); }
+
 function tuneStepHz(e) {
   if (e.shiftKey) return 100;
   if (e.altKey)   return 10000;
@@ -1577,7 +1582,7 @@ function tuneStepHz(e) {
 /* The one place the dial moves: field, band, band memory, and the radio. */
 function setFreqHz(hz) {
   hz = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, Math.round(hz)));
-  const mhzStr = (hz / 1e6).toFixed(4);
+  const mhzStr = fmtMhz(hz);
   $('inp-freq').value = mhzStr;
   autoDetectBand(mhzStr);            // also repaints the active band button
   rememberBandFreq(bandOfHz(hz), hz);
@@ -1646,7 +1651,7 @@ function jumpBand(band) {
   const hz = bandMemory()[band] || BAND_HOME[band];
   if (!hz) return;
   setFreqHz(hz);
-  toast(`${band} — ${(hz / 1e6).toFixed(4)} MHz${rigConnected ? ' (rig tuned)' : ''}`, 'ok');
+  toast(`${band} — ${fmtMhz(hz)} MHz${rigConnected ? ' (rig tuned)' : ''}`, 'ok');
 }
 
 (function initFreqTuning() {
@@ -3212,11 +3217,11 @@ const YAESU_MODE_APP = {
 
 function paintRigReadout() {
   if (!rigConnected || !rigLastHz) return;
-  setRigStatus('ok', `${(rigLastHz / 1e6).toFixed(4)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
+  setRigStatus('ok', `${fmtMhz(rigLastHz)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
 }
 
 function rigSetFreq(hz) {
-  const mhzStr = (hz / 1e6).toFixed(4);
+  const mhzStr = fmtMhz(hz);
   rigLastHz = hz;
   paintRigReadout();
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
@@ -3277,7 +3282,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-25-11';
+const APP_BUILD = '2026-09-28-12';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
