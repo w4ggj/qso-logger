@@ -669,9 +669,13 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 @media (max-width: 960px) {
   .panel-l-settings {
     background: var(--bg2);
-    box-shadow: inset 0 1px 0 var(--border);
+    border-top: 1px solid var(--border);
     padding: 0 18px 24px;
   }
+  /* One divider, at the top edge of the block. The accordion head carries its
+     own rule for when it sits mid-column on a desktop; down here that line
+     landed 16px inside the block and read as a stray mark. */
+  #acc-settings { margin-top: 0; border-top: none; padding-top: 16px; }
 }
 /* Clear the sticky header when the gear scrolls this into view. */
 #acc-settings { scroll-margin-top: 72px; }
@@ -813,6 +817,20 @@ footer {
 .ft-info { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.08em; }
 .ft-build { font-family: var(--mono); font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
 .ft-build.stale { color: var(--amber); }
+
+@media (max-width: 960px) {
+  /* The footer wraps to three lines on a phone, but its grid row was a fixed
+     44px, so the last lines spilled out of the painted bar and sat on bare
+     page below it. Let the row take the height its content needs. */
+  .app { grid-template-rows: 60px 1fr auto; }
+  footer {
+    padding: 12px 18px;
+    /* Settings is bg2 down here too, and a bg2 footer butted straight up
+       against it to make one flat slab. The darkest tone ends the page. */
+    background: var(--bg3);
+    border-top: 1px solid var(--border2);
+  }
+}
 
 /* Update bar — shown when the server is serving a newer build than this page.
    In the document flow at the top of the app rather than floating, so it can
@@ -3386,7 +3404,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-10-01-15';
+const APP_BUILD = '2026-10-01-16';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
