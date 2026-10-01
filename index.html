@@ -155,9 +155,30 @@ header {
 }
 #clock-lcl { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.06em; }
 
+/* On a phone the two columns stack, which leaves Settings a long scroll down
+   past the whole entry form — easy to miss entirely. This gear jumps straight
+   to it. The desktop layout gives the left column its own scrollbar, so
+   Settings is already a short scroll away there and the gear stays hidden. */
+.h-gear {
+  display: none;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--r);
+  color: var(--dim); font-size: 1rem; line-height: 1;
+  padding: 7px 10px; cursor: pointer;
+}
+.h-gear:hover { color: var(--text); border-color: var(--border3); }
+@media (max-width: 960px) { .h-gear { display: block; } }
+
 @media (max-width: 600px) {
   .h-meta { display: none; }
   .callsign { font-size: 1.1rem; }
+  /* The gear takes room the clock had, and the clock was already wrapping
+     mid-timestamp on a narrow phone. Pull the header in and hold each clock
+     line on one row. */
+  header { gap: 10px; padding: 0 12px; }
+  .h-right { gap: 10px; }
+  .clock-wrap { white-space: nowrap; }
+  #clock-utc { font-size: 0.82rem; letter-spacing: 0.06em; }
+  #clock-lcl { font-size: 0.58rem; }
 }
 
 /* ══════════════════════════════════════════
@@ -637,6 +658,13 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .accordion-body { display: none; padding-bottom: 4px; }
 .accordion-body.open { display: block; }
 
+/* Settings sits in its own block under the entry form rather than inside it,
+   so collapsing the form on a phone no longer takes Settings with it. The
+   padding here is what .panel-l-inner used to supply. */
+.panel-l-settings { padding: 0 18px 18px; }
+/* Clear the sticky header when the gear scrolls this into view. */
+#acc-settings { scroll-margin-top: 72px; }
+
 /* ══════════════════════════════════════════
    STATS STRIP
 ══════════════════════════════════════════ */
@@ -873,6 +901,10 @@ footer {
   color-scheme: dark;
 }
 
+/* Stands in for type="password" once the field is swapped to text so the
+   number pad will open. */
+#pin-input.masked { -webkit-text-security: disc; text-security: disc; }
+
 #pin-input:focus {
   border-color: var(--amber);
   box-shadow: 0 0 0 2px var(--amber-soft);
@@ -913,7 +945,8 @@ footer {
 <div id="pin-gate">
   <div id="pin-gate-title"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-white">QSO</span></div>
   <div id="pin-gate-sub">Logger &mdash; Enter PIN to continue</div>
-  <input type="password" id="pin-input" placeholder="••••••" maxlength="6">
+  <input type="password" id="pin-input" placeholder="••••••" maxlength="6"
+    inputmode="numeric" pattern="[0-9]*">
   <div id="pin-unlock-btn" role="button" tabindex="0" onclick="checkPin()">UNLOCK</div>
   <div id="pin-err">Incorrect PIN</div>
 </div>
@@ -940,6 +973,7 @@ footer {
       <div id="clock-utc">00:00:00 UTC</div>
       <div id="clock-lcl">00:00:00 LCL</div>
     </div>
+    <button class="h-gear" id="h-gear" onclick="openSettings()" title="Settings" aria-label="Settings">&#9881;</button>
   </div>
 </header>
 
@@ -1000,7 +1034,8 @@ footer {
       <div class="row2">
         <div class="field">
           <label>Frequency (MHz) <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(click, then scroll to tune)</span></label>
-          <input type="text" id="inp-freq" placeholder="14.225" oninput="autoDetectBand(this.value)"
+          <input type="text" id="inp-freq" placeholder="14.225" inputmode="decimal"
+            oninput="autoDetectBand(this.value)"
             title="Click the field, then scroll the mouse wheel (or press ↑/↓) to step the frequency — Shift = 100 Hz, Alt = 10 kHz. With the rig connected this tunes the radio.">
         </div>
         <div class="field">
@@ -1037,8 +1072,10 @@ footer {
       </div>
 
       <div class="row2">
-        <div class="field"><label>RST Sent</label><input type="text" id="inp-rst-s" placeholder="59" maxlength="5"></div>
-        <div class="field"><label>RST Rcvd</label><input type="text" id="inp-rst-r" placeholder="59" maxlength="5"></div>
+        <div class="field"><label>RST Sent</label><input type="text" id="inp-rst-s" placeholder="59" maxlength="5"
+          inputmode="numeric" pattern="[0-9]*"></div>
+        <div class="field"><label>RST Rcvd</label><input type="text" id="inp-rst-r" placeholder="59" maxlength="5"
+          inputmode="numeric" pattern="[0-9]*"></div>
       </div>
 
       <div class="sec-label green" style="margin-top:16px;">Activation Programs</div>
@@ -1063,6 +1100,9 @@ footer {
         <button class="btn btn-outline" onclick="prefill()" style="flex:1">⟳ Now</button>
       </div>
 
+    </div><!-- /panel-l-inner -->
+
+    <div class="panel-l-settings">
       <div class="accordion-head" id="acc-settings" onclick="toggleAccordion('settings')">
         <span>Settings</span>
         <span class="chevron">▾</span>
@@ -1217,7 +1257,11 @@ footer {
           </div>
         </div>
 
-      </div></div></div><div class="panel-r">
+      </div>
+    </div><!-- /panel-l-settings -->
+  </div><!-- /panel-l -->
+
+  <div class="panel-r">
 
     <div class="stats-strip">
       <div class="stat-card"><span class="stat-val" id="stat-total">0</span><span class="stat-lbl">Total QSOs</span></div>
@@ -1315,6 +1359,24 @@ function checkPin() {
 document.getElementById('pin-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') checkPin();
 });
+
+/* A password field is the one place inputmode is not honoured: iOS Safari
+   ignores it outright and Android keyboards disagree with each other, so a
+   six-digit PIN still comes up under a full QWERTY. A plain text field masked
+   in CSS gets the number pad everywhere and still shows dots. Only make the
+   swap where the browser can actually do the masking - otherwise leave it a
+   real password field rather than printing the PIN across the screen. */
+(function pinNumberPad() {
+  var el = document.getElementById('pin-input');
+  if (!el || !window.CSS || !CSS.supports) return;
+  if (!CSS.supports('-webkit-text-security', 'disc') && !CSS.supports('text-security', 'disc')) return;
+  el.type = 'text';
+  el.classList.add('masked');
+  el.setAttribute('autocomplete', 'off');
+  el.setAttribute('autocorrect', 'off');
+  el.setAttribute('autocapitalize', 'off');
+  el.setAttribute('spellcheck', 'false');
+})();
 
 // Stay unlocked across refreshes within the same browser session
 if (sessionStorage.getItem(PIN_SESSION_KEY) === '1') {
@@ -1568,6 +1630,11 @@ const FREQ_DEFAULT = 14200000;     // where an empty field starts
 let tuneHoldUntil = 0;             // ignore rig freq echoes just after a manual step
 let wheelAccum    = 0;
 
+/* 1 Hz resolution. Four decimals rounded to the nearest 100 Hz, so a radio
+   sitting on 14.211650 read back 14.2117 - and that rounded string is what the
+   field holds, so it is what gets logged and written to ADIF, not just shown. */
+function fmtMhz(hz) { return (hz / 1e6).toFixed(6); }
+
 function tuneStepHz(e) {
   if (e.shiftKey) return 100;
   if (e.altKey)   return 10000;
@@ -1577,7 +1644,7 @@ function tuneStepHz(e) {
 /* The one place the dial moves: field, band, band memory, and the radio. */
 function setFreqHz(hz) {
   hz = Math.max(FREQ_MIN_HZ, Math.min(FREQ_MAX_HZ, Math.round(hz)));
-  const mhzStr = (hz / 1e6).toFixed(4);
+  const mhzStr = fmtMhz(hz);
   $('inp-freq').value = mhzStr;
   autoDetectBand(mhzStr);            // also repaints the active band button
   rememberBandFreq(bandOfHz(hz), hz);
@@ -1646,7 +1713,7 @@ function jumpBand(band) {
   const hz = bandMemory()[band] || BAND_HOME[band];
   if (!hz) return;
   setFreqHz(hz);
-  toast(`${band} — ${(hz / 1e6).toFixed(4)} MHz${rigConnected ? ' (rig tuned)' : ''}`, 'ok');
+  toast(`${band} — ${fmtMhz(hz)} MHz${rigConnected ? ' (rig tuned)' : ''}`, 'ok');
 }
 
 (function initFreqTuning() {
@@ -3212,11 +3279,11 @@ const YAESU_MODE_APP = {
 
 function paintRigReadout() {
   if (!rigConnected || !rigLastHz) return;
-  setRigStatus('ok', `${(rigLastHz / 1e6).toFixed(4)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
+  setRigStatus('ok', `${fmtMhz(rigLastHz)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
 }
 
 function rigSetFreq(hz) {
-  const mhzStr = (hz / 1e6).toFixed(4);
+  const mhzStr = fmtMhz(hz);
   rigLastHz = hz;
   paintRigReadout();
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
@@ -3261,6 +3328,17 @@ function toast(msg, type = '') {
   toastT = setTimeout(() => el.classList.remove('show'), 3400);
 }
 
+/* The header gear. Settings is far down the stacked phone layout, so getting
+   there means opening the accordion and then putting it on screen. */
+function openSettings() {
+  const head = $('acc-settings');
+  const body = $('acc-body-settings');
+  if (!head || !body) return;
+  body.classList.add('open');
+  head.classList.add('open');
+  head.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function mobToggle() {
   const inner = $('form-inner');
   inner.classList.toggle('mob-hidden');
@@ -3277,7 +3355,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-09-25-11';
+const APP_BUILD = '2026-10-01-14';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

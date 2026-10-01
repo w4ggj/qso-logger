@@ -31,12 +31,21 @@ student was on the mic.
   the port, so no second trip through the port picker.
 - **Wheel tuning** — click the Frequency field, then scroll (or press `↑`/`↓`)
   to step the dial: 1 kHz, `Shift` 100 Hz, `Alt` 10 kHz. With the rig connected
-  each step is sent to the radio, so the wheel is the VFO knob.
+  each step is sent to the radio, so the wheel is the VFO knob. Steps snap onto
+  the step grid, so the first click from an off-grid frequency lands on a round
+  number rather than carrying the odd digits along.
+- **Frequency to 1 Hz** — the field carries all six decimal places, so a radio
+  sitting on 14.211650 logs and exports as 14.211650 rather than rounded to the
+  nearest 100 Hz.
 - **Band quick-jump** — one tap per band. Each band remembers the last frequency
   you were on, so hopping away and back returns you to your own frequency
   instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
+- **Built for a phone** — Settings has its own gear in the header on narrow
+  screens, so it is one tap away instead of a long scroll past the entry form,
+  and it stays reachable with the form collapsed. Number-only fields (the PIN,
+  frequency, RST) bring up the number pad rather than the full keyboard.
 - POTA · WWFF · SOTA · IOTA · BOTA · GMA · LOTA · WCA program support
 - ADIF + CSV export
 - Offline-capable PWA (installs to home screen), 100% static files
@@ -176,6 +185,28 @@ Adding another radio means one entry in `RIG_TYPES` plus a branch in each of
 polling, wheel tuning, band memory, autofill) is shared.
 
 ---
+
+## On-screen keyboards
+
+Fields that only ever take digits ask the phone for the number pad
+(`inputmode="numeric"`); Frequency asks for the decimal pad, since it needs the
+dot. Everything else keeps the full keyboard on purpose:
+
+| Field | Keyboard | Why |
+|---|---|---|
+| PIN | number pad | six digits (see below) |
+| Frequency (MHz) | decimal pad | digits plus `.` |
+| RST sent / received | number pad | `59`, `599` |
+| CI-V address | full | hex — `4E`, `A2` need letters |
+| My grid, their grid | full | Maidenhead is letters and digits |
+| Callsign, program refs | full | `KD9XYZ`, `US-6317` |
+
+A password field is the one input where `inputmode` is not honoured — iOS
+Safari ignores it and Android keyboards disagree — so the PIN field is swapped
+at load to a text field masked with `-webkit-text-security: disc`. It looks and
+behaves the same and the number pad opens. A browser that cannot do that
+masking keeps a real `type="password"` field instead, so the PIN is never shown
+in the clear.
 
 ## Callsign lookups
 
