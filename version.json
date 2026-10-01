@@ -1,4 +1,4 @@
 {
-  "build": "2026-10-01-15",
-  "notes": "Settings moves to the foot of the page on mobile, past the log"
+  "build": "2026-10-01-16",
+  "notes": "Footer no longer spills out of its bar on mobile; Settings and footer read as separate blocks"
 }
