@@ -42,10 +42,12 @@ student was on the mic.
   instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
-- **Built for a phone** — Settings has its own gear in the header on narrow
-  screens, so it is one tap away instead of a long scroll past the entry form,
-  and it stays reachable with the form collapsed. Number-only fields (the PIN,
-  frequency, RST) bring up the number pad rather than the full keyboard.
+- **Built for a phone** — on a narrow screen Settings moves to the foot of the
+  page, below the log, instead of sitting between the entry form and the log,
+  and a gear in the header jumps straight to it from anywhere. Number-only
+  fields (the PIN, frequency, RST) bring up the number pad rather than the
+  full keyboard. The desktop layout is unchanged: Settings stays at the bottom
+  of the left column, which has its own scrollbar.
 - POTA · WWFF · SOTA · IOTA · BOTA · GMA · LOTA · WCA program support
 - ADIF + CSV export
 - Offline-capable PWA (installs to home screen), 100% static files
