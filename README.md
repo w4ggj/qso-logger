@@ -42,6 +42,10 @@ student was on the mic.
   instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
+- **Built for a phone** — Settings has its own gear in the header on narrow
+  screens, so it is one tap away instead of a long scroll past the entry form,
+  and it stays reachable with the form collapsed. Number-only fields (the PIN,
+  frequency, RST) bring up the number pad rather than the full keyboard.
 - POTA · WWFF · SOTA · IOTA · BOTA · GMA · LOTA · WCA program support
 - ADIF + CSV export
 - Offline-capable PWA (installs to home screen), 100% static files
@@ -181,6 +185,21 @@ Adding another radio means one entry in `RIG_TYPES` plus a branch in each of
 polling, wheel tuning, band memory, autofill) is shared.
 
 ---
+
+## On-screen keyboards
+
+Fields that only ever take digits ask the phone for the number pad
+(`inputmode="numeric"`); Frequency asks for the decimal pad, since it needs the
+dot. Everything else keeps the full keyboard on purpose:
+
+| Field | Keyboard | Why |
+|---|---|---|
+| PIN | number pad | six digits |
+| Frequency (MHz) | decimal pad | digits plus `.` |
+| RST sent / received | number pad | `59`, `599` |
+| CI-V address | full | hex — `4E`, `A2` need letters |
+| My grid, their grid | full | Maidenhead is letters and digits |
+| Callsign, program refs | full | `KD9XYZ`, `US-6317` |
 
 ## Callsign lookups
 

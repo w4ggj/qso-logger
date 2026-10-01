@@ -1,4 +1,4 @@
 {
-  "build": "2026-09-28-12",
-  "notes": "Frequency shown and logged to 1 Hz instead of rounded to 100 Hz"
+  "build": "2026-10-01-13",
+  "notes": "Number pad on number-only fields; Settings reachable from a header gear on mobile"
 }
