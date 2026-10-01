@@ -901,6 +901,10 @@ footer {
   color-scheme: dark;
 }
 
+/* Stands in for type="password" once the field is swapped to text so the
+   number pad will open. */
+#pin-input.masked { -webkit-text-security: disc; text-security: disc; }
+
 #pin-input:focus {
   border-color: var(--amber);
   box-shadow: 0 0 0 2px var(--amber-soft);
@@ -1355,6 +1359,24 @@ function checkPin() {
 document.getElementById('pin-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') checkPin();
 });
+
+/* A password field is the one place inputmode is not honoured: iOS Safari
+   ignores it outright and Android keyboards disagree with each other, so a
+   six-digit PIN still comes up under a full QWERTY. A plain text field masked
+   in CSS gets the number pad everywhere and still shows dots. Only make the
+   swap where the browser can actually do the masking - otherwise leave it a
+   real password field rather than printing the PIN across the screen. */
+(function pinNumberPad() {
+  var el = document.getElementById('pin-input');
+  if (!el || !window.CSS || !CSS.supports) return;
+  if (!CSS.supports('-webkit-text-security', 'disc') && !CSS.supports('text-security', 'disc')) return;
+  el.type = 'text';
+  el.classList.add('masked');
+  el.setAttribute('autocomplete', 'off');
+  el.setAttribute('autocorrect', 'off');
+  el.setAttribute('autocapitalize', 'off');
+  el.setAttribute('spellcheck', 'false');
+})();
 
 // Stay unlocked across refreshes within the same browser session
 if (sessionStorage.getItem(PIN_SESSION_KEY) === '1') {
@@ -3333,7 +3355,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-10-01-13';
+const APP_BUILD = '2026-10-01-14';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

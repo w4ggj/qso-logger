@@ -194,12 +194,19 @@ dot. Everything else keeps the full keyboard on purpose:
 
 | Field | Keyboard | Why |
 |---|---|---|
-| PIN | number pad | six digits |
+| PIN | number pad | six digits (see below) |
 | Frequency (MHz) | decimal pad | digits plus `.` |
 | RST sent / received | number pad | `59`, `599` |
 | CI-V address | full | hex — `4E`, `A2` need letters |
 | My grid, their grid | full | Maidenhead is letters and digits |
 | Callsign, program refs | full | `KD9XYZ`, `US-6317` |
+
+A password field is the one input where `inputmode` is not honoured — iOS
+Safari ignores it and Android keyboards disagree — so the PIN field is swapped
+at load to a text field masked with `-webkit-text-security: disc`. It looks and
+behaves the same and the number pad opens. A browser that cannot do that
+masking keeps a real `type="password"` field instead, so the PIN is never shown
+in the clear.
 
 ## Callsign lookups
 
