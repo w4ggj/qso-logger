@@ -662,6 +662,17 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
    so collapsing the form on a phone no longer takes Settings with it. The
    padding here is what .panel-l-inner used to supply. */
 .panel-l-settings { padding: 0 18px 18px; }
+
+/* On a phone the block is moved out of the left column to the foot of the
+   page, past the log, so it needs to carry the column's own background down
+   there rather than sitting on the page behind the table. */
+@media (max-width: 960px) {
+  .panel-l-settings {
+    background: var(--bg2);
+    box-shadow: inset 0 1px 0 var(--border);
+    padding: 0 18px 24px;
+  }
+}
 /* Clear the sticky header when the gear scrolls this into view. */
 #acc-settings { scroll-margin-top: 72px; }
 
@@ -3328,6 +3339,26 @@ function toast(msg, type = '') {
   toastT = setTimeout(() => el.classList.remove('show'), 3400);
 }
 
+/* Desktop keeps Settings at the foot of the left column, which has its own
+   scrollbar, so it is a short scroll and the layout is right as it is. On a
+   phone the two columns stack, and "under the entry form" puts Settings
+   between the form and the log rather than at the end of the page - so it is
+   moved past the log, to the bottom. It is the same node either way, so the
+   accordion keeps whatever state it was in across a rotation. */
+const settingsMQ = window.matchMedia('(max-width: 960px)');
+
+function placeSettings(mq) {
+  const block = document.querySelector('.panel-l-settings');
+  const main  = document.querySelector('.main');
+  const left  = document.querySelector('.panel-l');
+  if (!block || !main || !left) return;
+  const host = mq.matches ? main : left;      /* phone: after the log table */
+  if (block.parentElement !== host) host.appendChild(block);
+}
+
+placeSettings(settingsMQ);
+settingsMQ.addEventListener('change', placeSettings);
+
 /* The header gear. Settings is far down the stacked phone layout, so getting
    there means opening the accordion and then putting it on screen. */
 function openSettings() {
@@ -3355,7 +3386,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-10-01-14';
+const APP_BUILD = '2026-10-01-15';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
