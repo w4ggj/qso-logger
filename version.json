@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-07-18",
-  "notes": "Backup and restore: export, merge, and an auto-written backup file where the browser supports it"
+  "build": "2026-11-07-19",
+  "notes": "Usable by anyone: own station details, per-device PIN, and Kenwood/Elecraft plus Icom and Yaesu model presets"
 }
