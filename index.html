@@ -655,6 +655,19 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .accordion-head:hover { color: var(--dim); }
 .accordion-head .chevron { transition: transform 0.2s; }
 .accordion-head.open .chevron { transform: rotate(180deg); }
+.cb-status {
+  font-family: var(--mono); font-size: 0.66rem; color: var(--muted);
+  letter-spacing: 0.04em; line-height: 1.5;
+}
+.cb-status strong { color: var(--text); }
+.cb-status.ready strong { color: var(--green); }
+.cb-bar {
+  display: none; height: 4px; margin-top: 8px;
+  background: var(--bg); border-radius: 2px; overflow: hidden;
+}
+.cb-bar.show { display: block; }
+.cb-fill { height: 100%; width: 0; background: var(--green); transition: width 0.2s; }
+
 .accordion-body { display: none; padding-bottom: 4px; }
 .accordion-body.open { display: block; }
 
@@ -1187,6 +1200,33 @@ footer {
             Requires a <span class="warn">QRZ XML Data subscription</span> for QRZ data.
           </div>
 
+        </div>
+
+        <div style="margin-top:14px;">
+          <div class="sec-label violet" style="margin-top:0">Offline Callbook</div>
+
+          <div class="cb-status" id="cb-status">Checking&hellip;</div>
+          <div class="cb-bar" id="cb-bar"><div class="cb-fill" id="cb-fill"></div></div>
+
+          <div class="btn-row" style="margin-top:8px;">
+            <button class="btn btn-outline" id="cb-get" onclick="cbDownloadUI()" style="flex:1">DOWNLOAD</button>
+            <button class="btn btn-outline" id="cb-del" onclick="cbDeleteUI()"
+              style="flex:0 0 auto;display:none">DELETE</button>
+          </div>
+
+          <div class="setup-guide" style="margin-top:8px;">
+            <strong>Country lookup already works offline</strong> &mdash; the DXCC prefix table ships with the
+            app, so any callsign on earth resolves to its country, continent and CQ/ITU zone with no signal and
+            nothing to download.<br><br>
+            The optional download above adds <strong>operator names, towns and grid squares for US callsigns</strong>:
+            the FCC&rsquo;s weekly list of active licences, about <strong>12.7&nbsp;MB</strong>, stored on this
+            device. Worth doing over wi-fi before a POTA activation or a GOTA day out of signal.<br><br>
+            Two caveats. The grid comes from the licensee&rsquo;s ZIP code, so it is the right area but not the
+            exact station &mdash; normally the correct 4-character square, sometimes a neighbouring subsquare. And
+            the file lists <em>currently granted</em> licences as of that week, so a recently reissued or brand-new
+            callsign can be missing; the app always tries the live sources first when you have signal. Your log is
+            stored separately and is never touched by downloading or deleting this.
+          </div>
         </div>
 
         <div style="margin-top:14px;">
@@ -2192,28 +2232,277 @@ function explainLookup() {
 
 /* A record with only a QTH still beats N/F: it names the country and fills the
    notes, which is most of what a DX record is good for. */
+/* ══════════════════════════════════════════
+   OFFLINE CALLBOOK
+
+   Two tiers, both working with no network at all.
+
+   cty.json ships with the app: 346 DXCC entities, ~6k prefixes and ~23k
+   exact-call exceptions in about 100 KB over the wire. That gives country,
+   continent and CQ/ITU zone for any callsign on earth from a cold start,
+   with nothing to download.
+
+   The callbook is the FCC's weekly amateur dump trimmed to active licences
+   — call, name, city, state, and a grid derived from the ZIP centroid —
+   about 12.7 MB gzipped, pulled into IndexedDB only when asked for.
+
+   Two things this deliberately does not do. The entity grid in cty.json is
+   a country centroid (the whole United States is EM47), so it never fills
+   Their Grid; only the per-callsign FCC grid does. And the FCC file is a
+   weekly snapshot of currently granted licences, so a reissued or very new
+   callsign can be missing from it — this sits behind the online callbooks
+   as a fallback, never as a replacement.
+══════════════════════════════════════════ */
+const CB_DB_NAME = 'w4ggj_callbook', CB_DB_VER = 1;
+const CB_CALLS = 'calls', CB_META = 'meta';
+const CALLBOOK_URL = 'https://raw.githubusercontent.com/w4ggj/qso-logger/data/callbook.psv.gz';
+const CTY_URL = './cty.json';
+
+let cbDbPromise = null;
+function cbOpen() {
+  if (cbDbPromise) return cbDbPromise;
+  cbDbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(CB_DB_NAME, CB_DB_VER);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(CB_CALLS)) db.createObjectStore(CB_CALLS, { keyPath: 'c' });
+      if (!db.objectStoreNames.contains(CB_META))  db.createObjectStore(CB_META,  { keyPath: 'k' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+  return cbDbPromise;
+}
+
+function cbIdb(store, mode, fn) {
+  return cbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const rq = fn(tx.objectStore(store));
+    tx.oncomplete = () => resolve(rq && rq.result);
+    tx.onerror    = () => reject(tx.error);
+    tx.onabort    = () => reject(tx.error);
+  }));
+}
+
+const cbGet  = call => cbIdb(CB_CALLS, 'readonly',  st => st.get(call)).catch(() => null);
+const cbStat = ()   => cbIdb(CB_META,  'readonly',  st => st.get('info')).catch(() => null);
+
+/* ─── cty.json — the small worldwide tier ─── */
+let ctyData = null, ctyPromise = null;
+function ctyLoad() {
+  if (ctyData) return Promise.resolve(ctyData);
+  if (!ctyPromise) {
+    ctyPromise = fetch(CTY_URL)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => (ctyData = d))
+      .catch(() => null);
+  }
+  return ctyPromise;
+}
+
+/* Longest-prefix match, with the exact-call exceptions winning outright —
+   that is what separates EA8 (Canary Islands) from EA (Spain), and what
+   makes a /P or a one-off expedition call land on the right entity. */
+function ctyLookup(call) {
+  if (!ctyData || !call) return null;
+  const c = call.toUpperCase();
+  let idx = ctyData.exact[c];
+  if (idx === undefined) {
+    let best = 0;
+    for (const p in ctyData.prefixes) {
+      if (p.length > best && c.startsWith(p)) { best = p.length; idx = ctyData.prefixes[p]; }
+    }
+  }
+  if (idx === undefined) return null;
+  const e = ctyData.entities[idx];
+  return e ? { country: e[0], cq: e[1], itu: e[2], continent: e[3] } : null;
+}
+
+/* The lookup the chain calls. Returns the same shape as the online ones. */
+async function offlineLookup(call) {
+  const c = (call || '').toUpperCase();
+  if (!c) return null;
+  await ctyLoad();
+  const cty = ctyLookup(c);
+  let rec = null;
+  try { rec = await cbGet(c); } catch (e) {}
+  if (!rec && !cty) return null;
+  return {
+    name:    rec ? rec.n : '',
+    grid:    rec ? (rec.g || '') : '',      /* never the cty centroid */
+    city:    rec ? rec.t : '',
+    state:   rec ? rec.s : '',
+    country: cty ? cty.country : '',
+    dxcc:    cty ? cty.continent : '',
+    source:  rec ? 'offline callbook' : 'offline prefix'
+  };
+}
+
+/* ─── Download ───
+   The gzip is decompressed as it arrives rather than buffered whole, so the
+   peak memory is a few chunks instead of 33 MB of text, and the progress bar
+   can read Content-Length, which only applies to the compressed side. */
+async function cbDownload(onProgress) {
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('This browser cannot decompress the file (no DecompressionStream)');
+  }
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+
+  const res = await fetch(CALLBOOK_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Download failed — HTTP ' + res.status);
+  const total = Number(res.headers.get('content-length')) || 0;
+
+  let seen = 0;
+  const counter = new TransformStream({
+    transform(chunk, ctl) { seen += chunk.byteLength; onProgress(total ? seen / total : 0, seen, total); ctl.enqueue(chunk); }
+  });
+
+  const reader = res.body
+    .pipeThrough(counter)
+    .pipeThrough(new DecompressionStream('gzip'))
+    .pipeThrough(new TextDecoderStream())
+    .getReader();
+
+  const db = await cbOpen();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(CB_CALLS, 'readwrite');
+    tx.objectStore(CB_CALLS).clear();
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+  });
+
+  let tail = '', batch = [], count = 0;
+  const flush = async () => {
+    if (!batch.length) return;
+    const rows = batch; batch = [];
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CB_CALLS, 'readwrite');
+      const st = tx.objectStore(CB_CALLS);
+      for (const r of rows) st.put(r);
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    });
+  };
+  const take = line => {
+    if (!line) return;
+    const f = line.split('|');
+    if (!f[0]) return;
+    batch.push({ c: f[0], n: f[1] || '', t: f[2] || '', s: f[3] || '', g: f[4] || '' });
+    count++;
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const parts = (tail + value).split('\n');
+    tail = parts.pop();
+    for (const ln of parts) take(ln);
+    if (batch.length >= 5000) await flush();
+  }
+  take(tail.trim());
+  await flush();
+
+  const info = { k: 'info', count, bytes: seen, built: new Date().toISOString() };
+  await cbIdb(CB_META, 'readwrite', st => st.put(info));
+  return info;
+}
+
+async function cbWipe() {
+  await cbIdb(CB_CALLS, 'readwrite', st => st.clear());
+  await cbIdb(CB_META,  'readwrite', st => st.clear());
+}
+
+/* ─── Settings panel ─── */
+function cbFmtBytes(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB'; }
+
+async function cbPaint() {
+  const el = $('cb-status'); if (!el) return;
+  const info = await cbStat();
+  const get = $('cb-get'), del = $('cb-del');
+  if (info && info.count) {
+    const when = (info.built || '').slice(0, 10);
+    el.className = 'cb-status ready';
+    el.innerHTML = `<strong>${info.count.toLocaleString()}</strong> US callsigns stored &mdash; downloaded ${when}`;
+    if (get) get.textContent = 'UPDATE';
+    if (del) del.style.display = '';
+  } else {
+    el.className = 'cb-status';
+    el.textContent = 'Not downloaded — DX country lookup still works offline.';
+    if (get) get.textContent = 'DOWNLOAD (~12.7 MB)';
+    if (del) del.style.display = 'none';
+  }
+}
+
+let cbBusy = false;
+async function cbDownloadUI() {
+  if (cbBusy) return;
+  cbBusy = true;
+  const el = $('cb-status'), bar = $('cb-bar'), fill = $('cb-fill'), get = $('cb-get');
+  if (get) get.disabled = true;
+  if (bar) bar.classList.add('show');
+  try {
+    el.className = 'cb-status';
+    el.textContent = 'Starting…';
+    const info = await cbDownload((frac, got, total) => {
+      if (fill) fill.style.width = Math.round(frac * 100) + '%';
+      el.textContent = total
+        ? `Downloading ${cbFmtBytes(got)} of ${cbFmtBytes(total)}…`
+        : `Downloading ${cbFmtBytes(got)}…`;
+    });
+    toast(`Offline callbook ready — ${info.count.toLocaleString()} callsigns`, 'ok');
+  } catch (err) {
+    toast('Callbook download failed: ' + (err && err.message ? err.message : err), 'err');
+  } finally {
+    cbBusy = false;
+    if (get) get.disabled = false;
+    if (bar) bar.classList.remove('show');
+    if (fill) fill.style.width = '0';
+    cbPaint();
+  }
+}
+
+async function cbDeleteUI() {
+  if (cbBusy) return;
+  if (!confirm('Delete the downloaded offline callbook? Your log is not touched.')) return;
+  try { await cbWipe(); toast('Offline callbook deleted', 'ok'); }
+  catch (e) { toast('Could not delete the callbook', 'err'); }
+  cbPaint();
+}
+
 function usableLookup(d) { return !!(d && (d.name || d.grid || d.country || d.city)); }
 
 async function lookupCallsign(call) {
   const badge = $('lookup-badge');
   badge.className = 'lookup-badge busy'; badge.textContent = '\u2026';
 
-  // 1) QRZ first \u2014 only if a proxy URL + credentials are configured
-  const haveQrz = qrzConfigured();
+  // Each online hop waits up to 8s. With no network that is a long wait for
+  // nothing before the offline data gets a turn, so skip straight past them.
+  const online = navigator.onLine !== false;
+  const haveQrz = online && qrzConfigured();
   lastQrzNote = '';
-  if (haveQrz) {
-    const q = await qrzLookup(call);
-    if (usableLookup(q)) { applyLookup(q); return; }
-    // otherwise fall through to the free callbooks
+
+  if (online) {
+    // 1) QRZ first \u2014 only if a proxy URL + credentials are configured
+    if (haveQrz) {
+      const q = await qrzLookup(call);
+      if (usableLookup(q)) { applyLookup(q); return; }
+      // otherwise fall through to the free callbooks
+    }
+
+    // 2) Free fallback \u2014 callook.info (US FCC), then HamDB (US/CA/AU/DE/CZ)
+    const free = (await callookLookup(call)) || (await hamdbLookup(call));
+    if (usableLookup(free)) { applyLookup(free); return; }
   }
 
-  // 2) Free fallback \u2014 callook.info (US FCC), then HamDB (US/CA/AU/DE/CZ)
-  const free = (await callookLookup(call)) || (await hamdbLookup(call));
-  if (usableLookup(free)) { applyLookup(free); return; }
+  // 3) Offline \u2014 the downloaded FCC callbook, then the bundled prefix
+  //    table. Last, because it is a weekly snapshot and the live sources
+  //    are fresher whenever they can be reached.
+  const off = await offlineLookup(call);
+  if (usableLookup(off)) { applyLookup(off); return; }
 
   badge.className   = 'lookup-badge fail';
   badge.textContent = 'N/F';
-  lookupWhy = haveQrz
+  lookupWhy = !online
+    ? `${call}: offline, and not in the downloaded callbook. Download it in Settings while you have signal.`
+    : haveQrz
     ? `${call}: no match in QRZ or the free callbooks` + (lastQrzNote ? ` — QRZ said "${lastQrzNote}"` : '')
     : `${call}: the free callbooks only cover US, CA, AU, DE and CZ. Set up QRZ in Settings to look up DX.`;
   badge.title = lookupWhy + '  (tap to show)';
@@ -3404,7 +3693,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-10-01-16';
+const APP_BUILD = '2026-11-07-17';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -3469,6 +3758,12 @@ paintSessions();
 renderTable();
 updateStats();
 refreshGotaList();
+
+/* The prefix table is small and makes DX lookups work with no signal, so it
+   is warmed on load rather than on the first lookup. cbPaint only reads
+   IndexedDB metadata, not the 800k records. */
+ctyLoad();
+cbPaint();
 
 /* Restore CAT settings + advertise browser support */
 (function initRig() {

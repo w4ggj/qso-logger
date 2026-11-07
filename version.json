@@ -1,4 +1,4 @@
 {
-  "build": "2026-10-01-16",
-  "notes": "Footer no longer spills out of its bar on mobile; Settings and footer read as separate blocks"
+  "build": "2026-11-07-17",
+  "notes": "Offline callsign lookup: bundled DXCC prefix table plus an optional FCC callbook download"
 }

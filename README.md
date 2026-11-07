@@ -42,6 +42,10 @@ student was on the mic.
   instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
+- **Offline callsign lookup** — DXCC country, continent and CQ/ITU zone for any
+  callsign on earth with no signal at all, from a prefix table that ships with
+  the app. Optionally download the FCC's weekly list of active US licences
+  (~12.7 MB) for operator names, towns and grid squares in the field.
 - **Built for a phone** — on a narrow screen Settings moves to the foot of the
   page, below the log, instead of sitting between the entry form and the log,
   and a gear in the header jumps straight to it from anywhere. Number-only
@@ -252,6 +256,62 @@ blank — the worker will use those instead.
 > callook.info / HamDB fallback covers US callsigns without any subscription.
 
 ---
+
+## Offline callsign lookup
+
+Two tiers, both working with no network.
+
+| | Ships with the app | Optional download |
+|---|---|---|
+| Source | `cty.dat` (AD1C, MIT licence) | FCC ULS weekly amateur dump |
+| Size | ~100 KB over the wire | **~12.7 MB** gzipped |
+| Coverage | every callsign on earth | 822k active **US** licences |
+| Gives you | country, continent, CQ/ITU zone | name, town, state, grid |
+| Stored in | the app shell | IndexedDB on that device |
+
+The prefix tier needs no setup — country lookup already works offline from a
+cold start. The callbook is downloaded from **Settings → Offline Callbook**;
+do it over wi-fi before heading somewhere without signal. Deleting it never
+touches your log.
+
+**Order of preference.** With signal the app always tries the live sources
+first (QRZ, then callook.info and HamDB) and only falls back to local data,
+because the local copy is a weekly snapshot. With no signal it skips straight
+to the local data rather than waiting out three network timeouts.
+
+**Two honest limitations.**
+
+- *The grid is approximate.* The FCC publishes an address, not coordinates, so
+  the grid is derived from the licensee's ZIP centroid. That is normally the
+  correct 4-character square and occasionally a neighbouring subsquare —
+  W1AW comes out `FN31pq` against a published `FN31pr`. 97.6% of records get
+  one. The country centroid from the prefix table is *never* used as a grid:
+  the whole United States would be `EM47`.
+- *It is a weekly snapshot of current grants.* A reissued or brand-new
+  callsign can be missing. Offline, a callsign that matches no prefix at all
+  reads N/F and says so; one that matches a prefix but has no US record still
+  resolves to its country, so a typo offline tends to show a country rather
+  than an error.
+
+QRZ is deliberately not part of this. It offers no bulk download, and its data
+is not ours to redistribute — it stays an online-only lookup.
+
+### Rebuilding the data
+
+`.github/workflows/offline-data.yml` runs `tools/build-offline-data.sh` every
+Monday and force-pushes a single orphan commit to the `data` branch, so the
+12.7 MB file never enters `main`'s history and cloning the app stays small.
+The job refuses to publish a build with fewer than 700,000 callsigns, so a
+truncated FCC file cannot quietly replace a working callbook on every phone.
+
+Run it by hand with:
+
+```
+tools/build-offline-data.sh out
+```
+
+All three sources are freely redistributable: FCC ULS and the Census ZCTA
+gazetteer are US public domain, `cty.dat` is MIT licensed.
 
 ## ADIF Program Fields
 
