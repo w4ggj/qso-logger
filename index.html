@@ -655,6 +655,16 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .accordion-head:hover { color: var(--dim); }
 .accordion-head .chevron { transition: transform 0.2s; }
 .accordion-head.open .chevron { transform: rotate(180deg); }
+.bk-status {
+  font-family: var(--mono); font-size: 0.66rem; color: var(--muted);
+  letter-spacing: 0.04em; line-height: 1.5;
+}
+.bk-status strong { color: var(--text); }
+.bk-status.ready strong { color: var(--green); }
+.bk-status.ready { color: var(--dim); }
+.bk-status.warn  { color: var(--amber); }
+.bk-status.warn strong { color: var(--amber); }
+
 .cb-status {
   font-family: var(--mono); font-size: 0.66rem; color: var(--muted);
   letter-spacing: 0.04em; line-height: 1.5;
@@ -1230,6 +1240,46 @@ footer {
         </div>
 
         <div style="margin-top:14px;">
+          <div class="sec-label" style="margin-top:0">Backup &amp; Restore</div>
+
+          <div class="bk-status" id="bk-status">&nbsp;</div>
+
+          <div class="btn-row" style="margin-top:8px;">
+            <button class="btn btn-outline" onclick="bkExport()" style="flex:1">&darr; EXPORT</button>
+            <button class="btn btn-outline" id="bk-share" onclick="bkShare()" style="flex:1;display:none">SHARE</button>
+          </div>
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="btn btn-outline" onclick="bkImportPick('merge')" style="flex:1">&uarr; MERGE IN</button>
+            <button class="btn btn-outline" onclick="bkImportPick('replace')" style="flex:1">RESTORE</button>
+          </div>
+
+          <div class="btn-row" id="bk-fs-row" style="margin-top:6px;display:none">
+            <button class="btn btn-outline" id="bk-pick" onclick="bkfReconnect()" style="flex:1">LINK A BACKUP FILE</button>
+            <button class="btn btn-outline" id="bk-unlink" onclick="bkfUnlink()"
+              style="flex:0 0 auto;display:none">UNLINK</button>
+          </div>
+
+          <div class="setup-guide" style="margin-top:8px;">
+            <strong>Your log lives only in this browser, on this device.</strong> Nothing is uploaded, there is no
+            account, and no copy exists anywhere else &mdash; so clearing site data deletes it, and a log made on a
+            phone does not appear on a laptop.<br><br>
+            <strong>Export</strong> writes a JSON file through a normal download, which lands outside the
+            browser&rsquo;s storage and survives clearing it. On a phone <strong>Share</strong> sends the same file
+            straight to Drive, Files or mail. <strong>Merge in</strong> adds the QSOs from a file that are not
+            already here &mdash; the way to combine a phone log and a laptop log, matching on callsign, date, time,
+            band and mode so nothing doubles up. <strong>Restore</strong> replaces everything instead.<br><br>
+            <span id="bk-fs-note"><strong>Linking a file</strong> &mdash; where the browser supports it, the app can
+            hold onto a file you choose and rewrite it after every change, with no further prompts, so a cleared
+            cache costs nothing. That needs the File System Access API, which today means <strong>desktop Chrome or
+            Edge</strong> &mdash; it is not available in Chrome for Android, Firefox or Safari, so the button only
+            appears where it actually works.</span><br><br>
+            The QRZ password is deliberately left out of the file &mdash; backups end up in Downloads and cloud
+            drives, which is no place for a credential. Everything else, including your grid, control op, rig setup
+            and all operating sessions, comes back.
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
           <div class="sec-label green" style="margin-top:0">CAT &mdash; Rig Control</div>
 
           <div style="margin-bottom:6px;">
@@ -1461,7 +1511,7 @@ const activePrograms = new Set();
 const $  = id => document.getElementById(id);
 const pad = x  => String(x).padStart(2, '0');
 
-function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); }
+function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); bkTouch(); }
 
 /* ─── Operating Sessions ───
    A GOTA station runs a fresh session per day or per event, and wants a clean
@@ -1479,6 +1529,7 @@ let viewSession   = '';   // what the table shows; VIEW_ALL = every session
 
 function saveSessions() {
   try { localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); } catch (e) {}
+  bkTouch();
 }
 
 function sessionById(id) { return sessions.find(s => s.id === id) || null; }
@@ -2232,6 +2283,320 @@ function explainLookup() {
 
 /* A record with only a QTH still beats N/F: it names the country and fills the
    notes, which is most of what a DX record is good for. */
+/* ══════════════════════════════════════════
+   BACKUP - EXPORT, IMPORT, AND A SYNCED FILE
+
+   Everything this app stores lives in one browser's own storage on one
+   device: localStorage for the log and settings, IndexedDB for the callbook.
+   Nothing is ever uploaded. That means clearing site data deletes the log,
+   and a log made on a phone does not exist on a laptop.
+
+   Two answers, because no single one works everywhere.
+
+   Export/import works in every browser. Export writes a JSON file through an
+   ordinary download, which on a phone lands outside browser storage and so
+   survives a cache clear; import takes it back, either merging into what is
+   already here or replacing it.
+
+   A synced backup file is better but narrower: the File System Access API
+   lets the app hold a handle to a real file the operator picks and rewrite it
+   after every change, with no further prompts. That is desktop Chrome and
+   Edge only - it is not available in Chrome for Android, Firefox or Safari,
+   so the control hides itself where it cannot work rather than pretending.
+
+   The QRZ password is deliberately left out of the file. A backup tends to
+   end up in Downloads or a cloud drive, which is no place for a credential,
+   and re-entering it once after a restore is cheap.
+══════════════════════════════════════════ */
+const BK_FORMAT = 'tavaone-qso-backup', BK_VERSION = 1;
+const BK_LAST_KEY = 'w4ggj_backup_last';
+/* Carried separately, derived, or a credential - never copied as settings. */
+const BK_SKIP = new Set(['w4ggj_log', 'w4ggj_sessions', 'w4ggj_session_active',
+                         'w4ggj_qrz_pass', 'w4ggj_unlocked', BK_LAST_KEY]);
+
+/* Entry ids are Date.now(), which two devices can repeat, so merging matches
+   on what the QSO actually was instead. */
+function qsoKey(e) {
+  return [e.call, e.date, e.time, e.band, e.mode]
+    .map(x => String(x == null ? '' : x).trim().toUpperCase()).join('|');
+}
+
+function backupPayload() {
+  const settings = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.indexOf('w4ggj_') === 0 && !BK_SKIP.has(k)) settings[k] = localStorage.getItem(k);
+  }
+  return {
+    format: BK_FORMAT,
+    version: BK_VERSION,
+    exported: new Date().toISOString(),
+    build: APP_BUILD,
+    station: getCtrlOp(),
+    counts: { qsos: log.length, sessions: sessions.length },
+    note: 'TavaOne QSO Logger backup. The QRZ password is not included.',
+    log, sessions, activeSession, settings
+  };
+}
+
+function backupBlob() {
+  return new Blob([JSON.stringify(backupPayload(), null, 2)], { type: 'application/json' });
+}
+function backupName() {
+  const call = (getCtrlOp() || 'qso').replace(/[^A-Za-z0-9]/g, '') || 'qso';
+  return `tavaone-${call}-${nowUTC().date}.json`;
+}
+function bkMarkSaved() {
+  try { localStorage.setItem(BK_LAST_KEY, new Date().toISOString()); } catch (e) {}
+  bkPaint();
+}
+
+/* ─── Export ─── */
+function bkExport() {
+  const url = URL.createObjectURL(backupBlob());
+  const a = document.createElement('a');
+  a.href = url; a.download = backupName();
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  bkMarkSaved();
+  toast(`Exported ${log.length} QSOs`, 'ok');
+}
+
+/* On a phone the share sheet is the only route into Drive, Files or mail, and
+   it is the realistic way a phone-only log gets off the device at all. */
+function bkCanShare() {
+  try {
+    return !!(navigator.canShare && navigator.share &&
+      navigator.canShare({ files: [new File(['{}'], 'x.json', { type: 'application/json' })] }));
+  } catch (e) { return false; }
+}
+async function bkShare() {
+  try {
+    const file = new File([backupBlob()], backupName(), { type: 'application/json' });
+    await navigator.share({ files: [file], title: 'TavaOne QSO backup' });
+    bkMarkSaved();
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;        /* the operator cancelled */
+    toast('Share failed - use Export instead', 'wrn');
+  }
+}
+
+/* ─── Import ─── */
+function bkValidate(data) {
+  if (!data || data.format !== BK_FORMAT) throw new Error('Not a TavaOne QSO backup file');
+  if (!Array.isArray(data.log)) throw new Error('Backup has no log in it');
+  if (Number(data.version) > BK_VERSION) {
+    throw new Error('That backup was written by a newer build of the app');
+  }
+  return data;
+}
+
+function bkApply(data, mode) {
+  bkValidate(data);
+  const incoming = data.log.filter(e => e && e.call);
+  const inSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  let added = 0, skipped = 0;
+
+  if (mode === 'replace') {
+    log = incoming.slice();
+    sessions = inSessions.slice();
+    activeSession = data.activeSession || (sessions[0] && sessions[0].id) || '';
+    added = incoming.length;
+    for (const k in (data.settings || {})) {
+      if (k.indexOf('w4ggj_') === 0 && !BK_SKIP.has(k)) {
+        try { localStorage.setItem(k, data.settings[k]); } catch (e) {}
+      }
+    }
+  } else {
+    const have = new Set(log.map(qsoKey));
+    const haveSession = new Set(sessions.map(x => x.id));
+    for (const e of incoming) {
+      if (have.has(qsoKey(e))) { skipped++; continue; }
+      have.add(qsoKey(e));
+      /* An id collision across devices would overwrite a different QSO. */
+      log.push(Object.assign({}, e, { id: e.id || Date.now() + added }));
+      added++;
+      const sid = e.session;
+      if (sid && !haveSession.has(sid)) {
+        const src = inSessions.find(x => x.id === sid);
+        sessions.push(src ? Object.assign({}, src)
+                          : { id: sid, name: e.date || sid, created: (e.date || '') + 'T00:00:00Z' });
+        haveSession.add(sid);
+      }
+    }
+    log.sort((a, b) => String(b.date + b.time).localeCompare(String(a.date + a.time)));
+  }
+
+  if (!sessionById(activeSession)) activeSession = (sessions[0] && sessions[0].id) || activeSession;
+  save(); saveSessions();
+  try { localStorage.setItem(SESS_ACTIVE, activeSession); } catch (e) {}
+  viewSession = activeSession;
+  if ($('inp-ctrl-op')) $('inp-ctrl-op').value = getCtrlOp();
+  paintCtrlOp(); paintSessions(); renderTable(); updateStats(); refreshGotaList();
+  if ($('grid-input')) $('grid-input').value = localStorage.getItem('w4ggj_grid') || '';
+  return { added, skipped, total: log.length };
+}
+
+function bkImportPick(mode) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/json,.json';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      bkValidate(data);
+      const n = data.log.length;
+      const msg = mode === 'replace'
+        ? `Replace everything on this device with ${n} QSOs from ${f.name}?\n\nYour current ${log.length} QSOs will be gone.`
+        : `Merge ${n} QSOs from ${f.name} into the ${log.length} already here?\n\nDuplicates are skipped; nothing is deleted.`;
+      if (!confirm(msg)) return;
+      const r = bkApply(data, mode);
+      toast(mode === 'replace'
+        ? `Restored ${r.total} QSOs`
+        : `Merged ${r.added} new, skipped ${r.skipped} duplicate${r.skipped === 1 ? '' : 's'}`, 'ok');
+    } catch (err) {
+      toast('Import failed: ' + (err && err.message ? err.message : err), 'err');
+    }
+  };
+  inp.click();
+}
+
+/* ─── The synced file (desktop Chromium only) ─── */
+const BKF_DB = 'w4ggj_backup', BKF_STORE = 'handles';
+function bkFsSupported() { return typeof window !== 'undefined' && 'showSaveFilePicker' in window; }
+
+function bkfIdb(mode, fn) {
+  return new Promise((resolve, reject) => {
+    const rq = indexedDB.open(BKF_DB, 1);
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(BKF_STORE)) db.createObjectStore(BKF_STORE);
+    };
+    rq.onerror = () => reject(rq.error);
+    rq.onsuccess = () => {
+      const db = rq.result;
+      const tx = db.transaction(BKF_STORE, mode);
+      const r = fn(tx.objectStore(BKF_STORE));
+      tx.oncomplete = () => resolve(r && r.result);
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+const bkfGet    = () => bkfIdb('readonly',  st => st.get('file')).catch(() => null);
+const bkfPut    = h  => bkfIdb('readwrite', st => st.put(h, 'file'));
+const bkfForget = () => bkfIdb('readwrite', st => st.delete('file'));
+
+async function bkfPermission(handle, request) {
+  if (!handle || !handle.queryPermission) return 'granted';   /* older shapes */
+  const opts = { mode: 'readwrite' };
+  let st = await handle.queryPermission(opts);
+  if (st !== 'granted' && request) st = await handle.requestPermission(opts);
+  return st;
+}
+
+async function bkfWrite(handle, request) {
+  const h = handle || await bkfGet();
+  if (!h) return false;
+  if (await bkfPermission(h, request) !== 'granted') return false;
+  const w = await h.createWritable();
+  await w.write(backupBlob());
+  await w.close();
+  return true;
+}
+
+async function bkfPick() {
+  try {
+    const h = await window.showSaveFilePicker({
+      suggestedName: backupName(),
+      types: [{ description: 'QSO backup', accept: { 'application/json': ['.json'] } }]
+    });
+    await bkfPut(h);
+    /* The picker itself grants write permission, so this first write proves
+       the whole path works before promising the operator anything. */
+    if (await bkfWrite(h, true)) { bkMarkSaved(); toast('Backup file linked and written', 'ok'); }
+    else toast('Linked, but writing was refused', 'wrn');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    toast('Could not link a file: ' + (e && e.message ? e.message : e), 'err');
+  }
+  bkPaint();
+}
+
+async function bkfUnlink() {
+  await bkfForget().catch(() => {});
+  toast('Backup file unlinked - the file itself is untouched', 'ok');
+  bkPaint();
+}
+
+/* Every log change asks for a rewrite, coalesced so a burst of edits is one
+   write. A refused permission is not retried until the operator acts, because
+   re-granting needs a gesture and silent retries would do nothing. */
+let bkTimer = null, bkNeedsGesture = false;
+function bkTouch() {
+  if (!bkFsSupported() || bkNeedsGesture) return;
+  clearTimeout(bkTimer);
+  bkTimer = setTimeout(async () => {
+    try {
+      const h = await bkfGet();
+      if (!h) return;
+      if (await bkfWrite(h, false)) bkMarkSaved();
+      else { bkNeedsGesture = true; bkPaint(); }
+    } catch (e) { bkNeedsGesture = true; bkPaint(); }
+  }, 1200);
+}
+
+async function bkfReconnect() {
+  const h = await bkfGet();
+  if (!h) return bkfPick();
+  if (await bkfWrite(h, true)) { bkNeedsGesture = false; bkMarkSaved(); toast('Backup file reconnected', 'ok'); }
+  else toast('Permission refused', 'wrn');
+  bkPaint();
+}
+
+/* ─── Settings panel ─── */
+function bkAgo(iso) {
+  if (!iso) return null;
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (!isFinite(days)) return null;
+  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+async function bkPaint() {
+  const el = $('bk-status'); if (!el) return;
+  const share = $('bk-share'); if (share) share.style.display = bkCanShare() ? '' : 'none';
+
+  const fsRow = $('bk-fs-row'), fsNote = $('bk-fs-note');
+  if (fsRow)  fsRow.style.display  = bkFsSupported() ? '' : 'none';
+  if (fsNote) fsNote.style.display = bkFsSupported() ? 'none' : '';
+
+  let linked = null;
+  if (bkFsSupported()) { try { linked = await bkfGet(); } catch (e) {} }
+  const unlink = $('bk-unlink');
+  if (unlink) unlink.style.display = linked ? '' : 'none';
+  const pick = $('bk-pick');
+  if (pick) pick.textContent = linked ? 'CHANGE FILE' : 'LINK A BACKUP FILE';
+
+  const last = localStorage.getItem(BK_LAST_KEY);
+  const ago  = bkAgo(last);
+  const stale = last && (Date.now() - new Date(last).getTime()) > 7 * 86400000;
+
+  if (bkNeedsGesture && linked) {
+    el.className = 'bk-status warn';
+    el.innerHTML = `<strong>Backup file needs reconnecting</strong> &mdash; the browser dropped write permission.`;
+  } else if (linked) {
+    el.className = 'bk-status ready';
+    el.innerHTML = `Writing to your backup file after every change &mdash; last ${ago || 'just now'}.`;
+  } else if (!last) {
+    el.className = 'bk-status warn';
+    el.innerHTML = `<strong>Never backed up.</strong> ${log.length} QSOs exist only in this browser.`;
+  } else {
+    el.className = stale ? 'bk-status warn' : 'bk-status';
+    el.innerHTML = `Last backup <strong>${ago}</strong>${stale ? ' &mdash; worth exporting again' : ''}.`;
+  }
+}
+
 /* ══════════════════════════════════════════
    OFFLINE CALLBOOK
 
@@ -3693,7 +4058,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-07-17';
+const APP_BUILD = '2026-11-07-18';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -3764,6 +4129,7 @@ refreshGotaList();
    IndexedDB metadata, not the 800k records. */
 ctyLoad();
 cbPaint();
+bkPaint();
 
 /* Restore CAT settings + advertise browser support */
 (function initRig() {

@@ -42,6 +42,10 @@ student was on the mic.
   instead of a canned one; connected rigs retune to it.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
+- **Backup & restore** — your log lives only in the browser you made it in, so
+  Export writes it to a JSON file, Merge combines a phone log with a laptop
+  one, and on desktop Chrome/Edge the app can keep a file on disk rewritten
+  after every change.
 - **Offline callsign lookup** — DXCC country, continent and CQ/ITU zone for any
   callsign on earth with no signal at all, from a prefix table that ships with
   the app. Optionally download the FCC's weekly list of active US licences
@@ -256,6 +260,49 @@ blank — the worker will use those instead.
 > callook.info / HamDB fallback covers US callsigns without any subscription.
 
 ---
+
+## Where your data lives, and backing it up
+
+Everything is stored in **one browser, on one device**: `localStorage` for the
+log, sessions and settings, IndexedDB for the offline callbook. Nothing is
+uploaded, there is no account, and the only outbound request carrying anything
+of yours is the QRZ lookup. Three consequences worth knowing:
+
+- Clearing site data **deletes the log**. There is no server copy.
+- Chrome and Safari on the same phone keep **separate logs**. So do a phone
+  and a laptop.
+- A home-screen PWA may or may not share storage with the browser it was
+  installed from — test it rather than assume.
+
+**Settings → Backup & Restore** covers this:
+
+| Control | What it does | Where it works |
+|---|---|---|
+| **Export** | Downloads a JSON file — lands outside browser storage, so it survives a cache clear | everywhere |
+| **Share** | Sends the same file to Drive, Files or mail via the share sheet | where `navigator.share` takes files (Android) |
+| **Merge in** | Adds the QSOs from a file that aren't already here | everywhere |
+| **Restore** | Replaces everything from a file | everywhere |
+| **Link a backup file** | Holds a file you pick and rewrites it after every change, no prompts | **desktop Chrome/Edge only** |
+
+Merging matches on callsign, date, time, band and mode rather than on the
+record id, because ids are `Date.now()` and two devices can repeat one. That
+makes merging idempotent: importing a file into the log it came from adds
+nothing. It is the way to combine a GOTA student's phone log with the
+station's.
+
+The linked file uses the **File System Access API**. That is not available in
+Chrome for Android, Firefox or Safari, so the button only appears where it
+actually works; everywhere else, Export is the answer and the panel says so.
+If the browser drops write permission — it needs a user gesture to re-grant —
+the panel says *needs reconnecting* rather than failing silently.
+
+**The QRZ password is deliberately excluded** from the file: backups end up in
+Downloads and cloud drives, which is no place for a credential. A restore will
+not overwrite the password already on the device. Everything else comes back —
+grid, control op, rig setup and every operating session.
+
+The panel also tracks when you last backed up, and says so plainly when that
+was never or more than a week ago.
 
 ## Offline callsign lookup
 
