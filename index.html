@@ -665,6 +665,11 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .bk-status.warn  { color: var(--amber); }
 .bk-status.warn strong { color: var(--amber); }
 
+.rig-untested {
+  margin-top: 6px; font-size: 0.6rem; line-height: 1.45;
+  color: var(--amber); letter-spacing: 0.03em;
+}
+
 .cb-status {
   font-family: var(--mono); font-size: 0.66rem; color: var(--muted);
   letter-spacing: 0.04em; line-height: 1.5;
@@ -1013,14 +1018,10 @@ footer {
 <header>
   <div class="h-left">
     <div class="callsign"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-white">QSO</span> <span class="brand-green">Logger</span></div>
-    <div class="h-badge" id="hdr-call">W4GGJ</div>
+    <div class="h-badge" id="hdr-call"></div>
   </div>
   <div class="h-right">
-    <div class="h-meta">
-      QTH: <span>TAMPA BAY, FL</span> &nbsp;|&nbsp;
-      GRID: <span id="hdr-grid">EL87PT</span> &nbsp;|&nbsp;
-      CLASS: <span>GENERAL</span>
-    </div>
+    <div class="h-meta" id="hdr-meta"></div>
     <div class="clock-wrap">
       <div id="clock-utc">00:00:00 UTC</div>
       <div id="clock-lcl">00:00:00 LCL</div>
@@ -1163,9 +1164,20 @@ footer {
 
         <div class="grid-row" style="margin-top:4px;padding-top:8px;border-top:none;">
           <label>MY GRID</label>
-          <input type="text" id="grid-input" value="EL87PT" maxlength="8"
+          <input type="text" id="grid-input" maxlength="8"
             oninput="saveGrid(this.value)" title="Maidenhead grid square">
           <button class="gps-btn" id="gps-btn" onclick="gpsGrid()">GPS</button>
+        </div>
+
+        <div class="grid-row">
+          <label>MY QTH</label>
+          <input type="text" id="station-qth" maxlength="40" placeholder="Town, State"
+            oninput="saveStation()" title="Shown in the header strip">
+        </div>
+        <div class="grid-row">
+          <label>CLASS</label>
+          <input type="text" id="station-class" maxlength="20" placeholder="General, Extra, Foundation..."
+            oninput="saveStation()" title="Your licence class, shown in the header strip">
         </div>
 
         <div style="margin-top:14px;">
@@ -1283,11 +1295,12 @@ footer {
           <div class="sec-label green" style="margin-top:0">CAT &mdash; Rig Control</div>
 
           <div style="margin-bottom:6px;">
-            <select id="rig-type" onchange="setRigType(this.value)" style="width:100%"
-              title="Which radio is on the other end of the cable">
-              <option value="civ">Icom CI-V &mdash; IC-706MKIIG</option>
-              <option value="yaesu">Yaesu CAT &mdash; FT-991A</option>
-            </select>
+            <select id="rig-model" onchange="setRigModel(this.value)" style="width:100%"
+              title="Which radio is on the other end of the cable"></select>
+            <div id="rig-untested" class="rig-untested" style="display:none">
+              Built from the published protocol but never run against this radio &mdash; if it works, or
+              doesn&rsquo;t, say so and the label comes off.
+            </div>
           </div>
 
           <div style="margin-bottom:6px;" id="rig-link-row">
@@ -1355,6 +1368,31 @@ footer {
             (or press <code>↑</code>/<code>↓</code>) to step the frequency &mdash; <code>Shift</code> for 100 Hz,
             <code>Alt</code> for 10 kHz. With the rig connected each step is sent to the radio, so the wheel acts as
             the VFO knob; with no rig connected it just sets the entry field.
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <div class="sec-label" style="margin-top:0">Device PIN</div>
+
+          <div class="bk-status" id="pin-status">&nbsp;</div>
+          <div class="grid-row" style="margin-top:6px;">
+            <label>PIN</label>
+            <input type="password" id="pin-set" maxlength="12" inputmode="numeric" pattern="[0-9]*"
+              placeholder="digits, or blank for none" autocomplete="off">
+          </div>
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="btn btn-outline" onclick="savePin()" style="flex:1">SET PIN</button>
+            <button class="btn btn-outline" id="pin-clear" onclick="clearPin()"
+              style="flex:0 0 auto;display:none">REMOVE</button>
+          </div>
+          <div class="setup-guide" style="margin-top:8px;">
+            Asks for a PIN before the logger opens on <em>this device</em>. There is no PIN until you set one.<br><br>
+            <strong>This is a tidiness lock, not security.</strong> It is checked in the page and stored in the
+            browser, so anyone with developer tools can read or skip it. It keeps a shared shack laptop or a club
+            tablet from being opened by accident. A static site with no server behind it cannot do better than
+            that, so do not rely on it to protect anything.<br><br>
+            It is left out of backup files, and it is per device &mdash; setting one here does not set it on your
+            phone.
           </div>
         </div>
 
@@ -1455,15 +1493,25 @@ footer {
 'use strict';
 
 /* ══════════════════════════════════════════
-   PIN GATE — plain text compare, same as field notes
-   Change QSO_PIN below to set your PIN.
+   PIN GATE
+
+   The PIN used to be a constant in this file, which meant every visitor could
+   read it in View Source — fine for one person's private page, meaningless
+   once anyone else can load the site. It is now set per device in Settings
+   and there is no gate at all until someone sets one.
+
+   This is still only a courtesy lock: it is checked in the page and stored in
+   localStorage, so anyone with the browser's devtools can read or bypass it.
+   It keeps a shared shack laptop tidy. It is not security, and a static site
+   with no backend cannot offer any.
 ══════════════════════════════════════════ */
-var QSO_PIN = '264711'; /* Hardcoded matching configuration token pattern key logic values */
+var PIN_KEY = 'w4ggj_pin';
 var PIN_SESSION_KEY = 'w4ggj_unlocked';
+function localPin() { try { return localStorage.getItem(PIN_KEY) || ''; } catch (e) { return ''; } }
 
 function checkPin() {
   var val = document.getElementById('pin-input').value;
-  if (val === QSO_PIN) {
+  if (val === localPin()) {
     sessionStorage.setItem(PIN_SESSION_KEY, '1');
     document.getElementById('pin-gate').style.display = 'none';
     document.getElementById('app-wrap').style.display = 'block';
@@ -1497,8 +1545,8 @@ document.getElementById('pin-input').addEventListener('keydown', function(e) {
   el.setAttribute('spellcheck', 'false');
 })();
 
-// Stay unlocked across refreshes within the same browser session
-if (sessionStorage.getItem(PIN_SESSION_KEY) === '1') {
+// No PIN set means no gate. Otherwise stay unlocked for this browser session.
+if (!localPin() || sessionStorage.getItem(PIN_SESSION_KEY) === '1') {
   document.getElementById('pin-gate').style.display = 'none';
   document.getElementById('app-wrap').style.display = 'block';
 }
@@ -1512,6 +1560,74 @@ const $  = id => document.getElementById(id);
 const pad = x  => String(x).padStart(2, '0');
 
 function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); bkTouch(); }
+
+/* ─── Station identity ───
+   None of this is pre-filled with anybody's station. The header shows only
+   the parts that have been set, so a brand-new operator sees an empty strip
+   rather than someone else's QTH. */
+const QTH_KEY = 'w4ggj_qth', CLASS_KEY = 'w4ggj_class';
+const getQth   = () => { try { return localStorage.getItem(QTH_KEY)   || ''; } catch (e) { return ''; } };
+const getClass = () => { try { return localStorage.getItem(CLASS_KEY) || ''; } catch (e) { return ''; } };
+
+function saveStation() {
+  try {
+    localStorage.setItem(QTH_KEY,   ($('station-qth')   || {}).value || '');
+    localStorage.setItem(CLASS_KEY, ($('station-class') || {}).value || '');
+  } catch (e) {}
+  paintStation();
+}
+
+function paintStation() {
+  const meta = $('hdr-meta');
+  if (meta) {
+    /* Built as nodes, not markup: these strings are typed by the operator and
+       the app's esc() escapes for JS strings, not for HTML. */
+    const parts = [
+      ['QTH: ',   getQth().toUpperCase(), null],
+      ['GRID: ',  (localStorage.getItem('w4ggj_grid') || '').toUpperCase(), 'hdr-grid'],
+      ['CLASS: ', getClass().toUpperCase(), null],
+    ].filter(x => x[1]);
+    meta.textContent = '';
+    parts.forEach(([label, value, id], i) => {
+      if (i) meta.appendChild(document.createTextNode('\u00a0 | \u00a0'));
+      meta.appendChild(document.createTextNode(label));
+      const sp = document.createElement('span');
+      if (id) sp.id = id;
+      sp.textContent = value;
+      meta.appendChild(sp);
+    });
+  }
+  if ($('station-qth')   && document.activeElement !== $('station-qth'))   $('station-qth').value = getQth();
+  if ($('station-class') && document.activeElement !== $('station-class')) $('station-class').value = getClass();
+}
+
+function paintPin() {
+  const el = $('pin-status'); if (!el) return;
+  const set = !!localPin();
+  el.className = 'bk-status' + (set ? ' ready' : '');
+  el.innerHTML = set
+    ? 'This device asks for a PIN before opening.'
+    : '<strong>No PIN set</strong> &mdash; the logger opens straight away on this device.';
+  const clear = $('pin-clear');
+  if (clear) clear.style.display = set ? '' : 'none';
+  if ($('pin-set')) $('pin-set').value = '';
+}
+
+function savePin() {
+  const v = (($('pin-set') || {}).value || '').trim();
+  if (!v) { toast('Enter a PIN first, or use Remove', 'wrn'); return; }
+  if (!/^[0-9]{4,12}$/.test(v)) { toast('Use 4 to 12 digits', 'wrn'); return; }
+  try { localStorage.setItem(PIN_KEY, v); } catch (e) {}
+  try { sessionStorage.setItem(PIN_SESSION_KEY, '1'); } catch (e) {}   // don't lock yourself out now
+  toast('PIN set for this device', 'ok');
+  paintPin();
+}
+
+function clearPin() {
+  try { localStorage.removeItem(PIN_KEY); } catch (e) {}
+  toast('PIN removed', 'ok');
+  paintPin();
+}
 
 /* ─── Operating Sessions ───
    A GOTA station runs a fresh session per day or per event, and wants a clean
@@ -1669,7 +1785,7 @@ function setViewSession(v) {
    sessions, and stamped onto every QSO so exports stay true to who was
    actually in control at the time. */
 const CTRL_OP_KEY   = 'w4ggj_ctrl_op';
-const CTRL_OP_DFLT  = 'W4GGJ';
+const CTRL_OP_DFLT  = '';
 
 function getCtrlOp() {
   return (localStorage.getItem(CTRL_OP_KEY) || '').trim().toUpperCase() || CTRL_OP_DFLT;
@@ -1872,13 +1988,15 @@ function jumpBand(band) {
 
 /* ─── Grid Square ─── */
 const savedGrid = localStorage.getItem('w4ggj_grid');
-if (savedGrid) { $('grid-input').value = savedGrid; $('hdr-grid').textContent = savedGrid; }
+if (savedGrid) $('grid-input').value = savedGrid;
 
 function saveGrid(v) {
   v = v.toUpperCase();
   $('grid-input').value = v;
-  $('hdr-grid').textContent = v;
   localStorage.setItem('w4ggj_grid', v);
+  /* The header strip is rebuilt rather than patched: with no grid set there
+     is no #hdr-grid node to write into. */
+  paintStation();
 }
 
 function latLonToGrid(lat, lon) {
@@ -2312,7 +2430,7 @@ const BK_FORMAT = 'tavaone-qso-backup', BK_VERSION = 1;
 const BK_LAST_KEY = 'w4ggj_backup_last';
 /* Carried separately, derived, or a credential - never copied as settings. */
 const BK_SKIP = new Set(['w4ggj_log', 'w4ggj_sessions', 'w4ggj_session_active',
-                         'w4ggj_qrz_pass', 'w4ggj_unlocked', BK_LAST_KEY]);
+                         'w4ggj_qrz_pass', 'w4ggj_unlocked', 'w4ggj_pin', BK_LAST_KEY]);
 
 /* Entry ids are Date.now(), which two devices can repeat, so merging matches
    on what the QSO actually was instead. */
@@ -3567,12 +3685,74 @@ async function usbOpenLink(dev, baud) {
 
 const RIG_TYPE_KEY = 'w4ggj_rig_type';
 const RIG_LINK_KEY = 'w4ggj_rig_link';
+const RIG_MODEL_KEY = 'w4ggj_rig_model';
+
+/* One entry per protocol. poll/tune/parse are the whole driver seam: adding a
+   radio family means adding a row here, not touching the transport, the
+   reconnect logic or the UI. */
 const RIG_TYPES = {
-  civ:   { bauds: [19200, 9600, 4800, 1200],  defBaud: 19200, addr: true,
-           baudTitle: 'CI-V baud — must match SET → CI-V Baud on the radio' },
-  yaesu: { bauds: [38400, 19200, 9600, 4800], defBaud: 4800,  addr: false,
-           baudTitle: 'CAT baud — must match MENU 031 CAT RATE on the radio' }
+  civ: {
+    label: 'Icom CI-V',
+    bauds: [19200, 9600, 4800, 1200],  defBaud: 19200, addr: true,
+    baudTitle: 'CI-V baud — must match SET → CI-V Baud on the radio',
+    poll()   { civSend(0x03); civSend(0x04); },
+    tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
+    parse()  { civParse(); }
+  },
+  yaesu: {
+    label: 'Yaesu CAT',
+    bauds: [38400, 19200, 9600, 4800], defBaud: 4800,  addr: false,
+    baudTitle: 'CAT baud — must match MENU 031 CAT RATE on the radio',
+    /* MD0 on Yaesu: the 0 selects the VFO. Kenwood has no such digit. */
+    poll()   { catSend('FA;'); catSend('MD0;'); },
+    tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';'); },
+    parse()  { catParse(yaesuHandleMsg); }
+  },
+  kenwood: {
+    label: 'Kenwood / Elecraft',
+    bauds: [115200, 57600, 38400, 19200, 9600, 4800], defBaud: 9600, addr: false,
+    baudTitle: 'CAT baud — must match the serial rate set on the radio',
+    /* Same ASCII-and-semicolon shape as Yaesu, but FA carries 11 digits
+       rather than 9 and the mode query has no VFO digit. Those two
+       differences are exactly why this is its own driver. */
+    poll()   { catSend('FA;'); catSend('MD;'); },
+    tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(11, '0') + ';'); },
+    parse()  { catParse(kenwoodHandleMsg); }
+  }
 };
+
+/* Models are presets over those protocols: a CI-V radio differs only by its
+   default address, a CAT radio only by its default rate. `tested` marks the
+   radios this has actually been run against on air — everything else is
+   built from the published protocol and is labelled untested in the picker,
+   because a list that looks authoritative and is half-guessed is worse than a
+   short honest one. */
+const RIG_MODELS = [
+  { id: 'icom-706',    label: 'Icom IC-706MKIIG', proto: 'civ', addr: 0x58, tested: true },
+  { id: 'icom-7300',   label: 'Icom IC-7300',     proto: 'civ', addr: 0x94 },
+  { id: 'icom-7100',   label: 'Icom IC-7100',     proto: 'civ', addr: 0x88 },
+  { id: 'icom-7610',   label: 'Icom IC-7610',     proto: 'civ', addr: 0x98 },
+  { id: 'icom-9700',   label: 'Icom IC-9700',     proto: 'civ', addr: 0xA2 },
+  { id: 'icom-705',    label: 'Icom IC-705',      proto: 'civ', addr: 0xA4 },
+  { id: 'icom-other',  label: 'Icom — other (set the address)', proto: 'civ', addr: 0x58 },
+
+  { id: 'yaesu-991a',  label: 'Yaesu FT-991A',    proto: 'yaesu', baud: 4800, tested: true },
+  { id: 'yaesu-891',   label: 'Yaesu FT-891',     proto: 'yaesu', baud: 4800 },
+  { id: 'yaesu-710',   label: 'Yaesu FT-710',     proto: 'yaesu', baud: 38400 },
+  { id: 'yaesu-dx10',  label: 'Yaesu FTDX10',     proto: 'yaesu', baud: 38400 },
+  { id: 'yaesu-dx101', label: 'Yaesu FTDX101',    proto: 'yaesu', baud: 38400 },
+  { id: 'yaesu-other', label: 'Yaesu — other',  proto: 'yaesu', baud: 4800 },
+
+  { id: 'ken-590',     label: 'Kenwood TS-590S/SG', proto: 'kenwood', baud: 9600 },
+  { id: 'ken-480',     label: 'Kenwood TS-480',     proto: 'kenwood', baud: 9600 },
+  { id: 'ken-890',     label: 'Kenwood TS-890S',    proto: 'kenwood', baud: 115200 },
+  { id: 'elecraft-k3', label: 'Elecraft K3/K3S',    proto: 'kenwood', baud: 38400 },
+  { id: 'elecraft-kx', label: 'Elecraft KX2/KX3',   proto: 'kenwood', baud: 38400 },
+  { id: 'ken-other',   label: 'Kenwood / Elecraft — other', proto: 'kenwood', baud: 9600 }
+];
+const rigModelById = id => RIG_MODELS.find(m => m.id === id) || null;
+
+let rigModel = 'icom-706';
 let rigType = 'civ';
 let rigPort = null, rigReader = null, rigWriter = null;
 let rigLink = null;                 // active transport: Web Serial or WebUSB
@@ -3612,7 +3792,13 @@ function savedRigBaud(t) {
 
 function paintRigType() {
   const spec = RIG_TYPES[rigType];
-  if ($('rig-type')) $('rig-type').value = rigType;
+  if ($('rig-model')) $('rig-model').value = rigModel;
+
+  const warn = $('rig-untested');
+  if (warn) {
+    const m = rigModelById(rigModel);
+    warn.style.display = (m && m.tested) ? 'none' : '';
+  }
 
   const baud = $('rig-baud');
   if (baud) {
@@ -3656,15 +3842,53 @@ function setRigLink(v) {
   paintRigLink();
 }
 
-function setRigType(t) {
-  if (!RIG_TYPES[t] || t === rigType) return;
+function setRigModel(id) {
+  const m = rigModelById(id);
+  if (!m || id === rigModel) return;
   if (rigConnected) {
     try { localStorage.removeItem(RIG_AUTO_KEY); } catch (e) {}   // don't auto-open the old rig next load
-    rigDisconnect(false, 'Rig type changed');
+    rigDisconnect(false, 'Radio changed');
   }
-  rigType = t;
-  try { localStorage.setItem(RIG_TYPE_KEY, t); } catch (e) {}
+  rigModel = m.id;
+  rigType  = m.proto;
+  try {
+    localStorage.setItem(RIG_MODEL_KEY, m.id);
+    localStorage.setItem(RIG_TYPE_KEY, m.proto);
+    /* The address field is the operator's to override, so a model only seeds
+       it. Picking "other" deliberately leaves whatever is already there. */
+    if (m.proto === 'civ' && m.id !== 'icom-other') {
+      const hex = m.addr.toString(16).toUpperCase().padStart(2, '0');
+      localStorage.setItem('w4ggj_rig_addr', hex);
+      if ($('rig-addr')) $('rig-addr').value = hex;
+    }
+    if (m.baud) localStorage.setItem(rigBaudKey(m.proto), String(m.baud));
+  } catch (e) {}
   paintRigType();
+}
+
+/* Kept so an older saved protocol still selects something sensible. */
+function setRigType(t) {
+  const m = RIG_MODELS.find(x => x.proto === t);
+  if (m) setRigModel(m.id);
+}
+
+function buildRigModelOptions() {
+  const sel = $('rig-model');
+  if (!sel) return;
+  sel.innerHTML = '';
+  let group = null, lastProto = null;
+  for (const m of RIG_MODELS) {
+    if (m.proto !== lastProto) {
+      group = document.createElement('optgroup');
+      group.label = RIG_TYPES[m.proto].label;
+      sel.appendChild(group);
+      lastProto = m.proto;
+    }
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = m.label + (m.tested ? '' : '  (untested)');
+    group.appendChild(o);
+  }
 }
 
 function rigSupported() { return 'serial' in navigator; }
@@ -3824,28 +4048,20 @@ async function civSend(cmd, data) {
   catch (e) { setRigStatus('err', 'Write error'); }
 }
 
-/* ─── Yaesu CAT: ASCII, ';'-terminated ─── */
-async function yaesuSend(str) {
+/* ─── CAT: ASCII, ';'-terminated. Yaesu and Kenwood share the framing. ─── */
+async function catSend(str) {
   if (!rigLink) return;
   try { await rigLink.write(new TextEncoder().encode(str)); }
   catch (e) { setRigStatus('err', 'Write error'); }
 }
 
-/* ─── Driver dispatch ─── */
-function rigPoll() {                                   // read freq, read mode
-  if (rigType === 'yaesu') { yaesuSend('FA;'); yaesuSend('MD0;'); }
-  else                     { civSend(0x03);   civSend(0x04);      }
-}
-
-function rigTuneSend(hz) {
-  if (rigType === 'yaesu') yaesuSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';');
-  else                     civSend(0x05, civEncodeFreq(hz));
-}
-
-function rigParse() {
-  if (rigType === 'yaesu') yaesuParse();
-  else                     civParse();
-}
+/* ─── Driver dispatch ───
+   Everything protocol-specific now lives in RIG_TYPES. These three only find
+   the active driver, so a new radio family never edits this block. */
+function rigDriver()     { return RIG_TYPES[rigType] || RIG_TYPES.civ; }
+function rigPoll()       { rigDriver().poll(); }        // read freq, read mode
+function rigTuneSend(hz) { rigDriver().tune(hz); }
+function rigParse()      { rigDriver().parse(); }
 
 async function rigReadLoop() {
   const link = rigLink;
@@ -3871,14 +4087,16 @@ function civParse() {
   if (rigBuf.length > 512) rigBuf = [];   // safety valve
 }
 
-/* Yaesu replies are text. Split on ';', keep any unterminated tail for the
-   next chunk. The 991A answers queries only — nothing to echo-filter. */
-function yaesuParse() {
+/* CAT replies are text. Split on ';', keep any unterminated tail for the next
+   chunk. These radios answer queries only — nothing to echo-filter. The
+   handler is a parameter because the framing is shared but the messages are
+   not. */
+function catParse(handleMsg) {
   let s = '';
   for (const b of rigBuf) s += String.fromCharCode(b);
   let i;
   while ((i = s.indexOf(';')) !== -1) {
-    yaesuHandleMsg(s.slice(0, i));
+    handleMsg(s.slice(0, i));
     s = s.slice(i + 1);
   }
   rigBuf = [];
@@ -3888,7 +4106,10 @@ function yaesuParse() {
 
 /* 'FA014250000' → 14.2500 MHz ;  'MD02' → USB */
 function yaesuHandleMsg(msg) {
-  if (msg.slice(0, 2) === 'FA' && msg.length >= 11) {
+  /* Exactly 11: 'FA' plus 9 digits. A looser test let a Kenwood's 13-char
+     reply through here and read 14.250000 MHz back as 0.142500 - a wrong
+     number is worse than none, because it looks like a working radio. */
+  if (msg.slice(0, 2) === 'FA' && msg.length === 11) {
     const hz = parseInt(msg.slice(2, 11), 10);
     if (hz) rigSetFreq(hz);
   } else if (msg.slice(0, 3) === 'MD0' && msg.length >= 4) {
@@ -3982,6 +4203,32 @@ function civSetMode(code) {
   applyRigMode(CIV_MODE_APP[code]);
 }
 
+/* Kenwood/Elecraft: 'FA00014250000' — 11 digits, against Yaesu's 9. CW-R and
+   RTTY-R are shown as themselves but logged as CW and RTTY, which is what the
+   log's Mode list offers. */
+const KENWOOD_MODE_LABEL = {
+  '1':'LSB', '2':'USB', '3':'CW', '4':'FM', '5':'AM', '6':'RTTY', '7':'CW-R', '9':'RTTY-R'
+};
+const KENWOOD_MODE_APP = {
+  '1':'SSB', '2':'SSB', '3':'CW', '4':'FM', '5':'AM', '6':'RTTY', '7':'CW', '9':'RTTY'
+};
+
+function kenwoodHandleMsg(msg) {
+  /* Exactly 13: 'FA' plus 11 digits. Same reasoning as the Yaesu driver. */
+  if (msg.slice(0, 2) === 'FA' && msg.length === 13) {
+    const hz = parseInt(msg.slice(2, 13), 10);
+    if (hz) rigSetFreq(hz);
+  } else if (msg.slice(0, 2) === 'MD' && msg.length >= 3) {
+    kenwoodSetMode(msg.charAt(2));
+  }
+}
+
+function kenwoodSetMode(code) {
+  rigModeLabel = KENWOOD_MODE_LABEL[code] || '';
+  paintRigReadout();
+  applyRigMode(KENWOOD_MODE_APP[code]);
+}
+
 function yaesuSetMode(code) {
   rigModeLabel = YAESU_MODE_LABEL[code] || '';
   paintRigReadout();
@@ -4058,7 +4305,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-07-18';
+const APP_BUILD = '2026-11-07-19';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -4130,11 +4377,26 @@ refreshGotaList();
 ctyLoad();
 cbPaint();
 bkPaint();
+paintStation();
+paintPin();
 
 /* Restore CAT settings + advertise browser support */
 (function initRig() {
-  const savedType = localStorage.getItem(RIG_TYPE_KEY);
-  if (savedType && RIG_TYPES[savedType]) rigType = savedType;
+  buildRigModelOptions();
+  const savedModel = localStorage.getItem(RIG_MODEL_KEY);
+  const savedType  = localStorage.getItem(RIG_TYPE_KEY);
+  if (savedModel && rigModelById(savedModel)) {
+    rigModel = savedModel;
+    rigType  = rigModelById(savedModel).proto;
+  } else if (savedType && RIG_TYPES[savedType]) {
+    /* Settings from before the model picker stored only the protocol. Land on
+       the radio that protocol was actually written for rather than resetting
+       someone's working rig to the top of the list. */
+    rigType = savedType;
+    const first = RIG_MODELS.find(m => m.proto === savedType && m.tested)
+               || RIG_MODELS.find(m => m.proto === savedType);
+    if (first) rigModel = first.id;
+  }
   const savedLink = localStorage.getItem(RIG_LINK_KEY);
   if (savedLink === 'usb' || savedLink === 'serial') rigLinkKind = savedLink;
   paintRigLink();

@@ -141,6 +141,31 @@ nothing moves and nothing is lost.
 
 ---
 
+## Setting up your own station
+
+Nothing in the app is pre-filled with anyone else's station. On a first visit
+the header strip is empty and the logger opens straight away. In
+**Settings** set:
+
+- **My callsign** (the control op field on the entry form) — shown in the
+  header badge and stamped onto every QSO
+- **My grid** — or tap GPS
+- **My QTH** and **Class** — free text, shown in the header strip; each one is
+  hidden until you set it
+
+### Device PIN
+
+There is **no PIN until you set one**, in Settings. It is stored on that
+device only, so setting one on a laptop does not set one on a phone, and it is
+left out of backup files.
+
+**It is a tidiness lock, not security.** It is checked in the page and held in
+browser storage, so anyone with developer tools can read or skip it. It stops
+a shared shack laptop or a club tablet being opened by accident. A static site
+with no server behind it cannot do better, so do not rely on it to protect
+anything. (Earlier builds had a PIN written into the source, which every
+visitor could read — that is gone.)
+
 ## Rig setup
 
 Pick the radio in **Settings → CAT — Rig Control**, set the baud to match the
@@ -195,6 +220,32 @@ Adding another radio means one entry in `RIG_TYPES` plus a branch in each of
 polling, wheel tuning, band memory, autofill) is shared.
 
 ---
+
+
+### Supported radios
+
+The picker is a list of models; each one selects a protocol driver and seeds
+that driver's defaults. Three drivers cover all of them:
+
+| Driver | Radios | Differs by |
+|---|---|---|
+| **Icom CI-V** | IC-706MKIIG, IC-7100, IC-7300, IC-7610, IC-9700, IC-705, other | CI-V address (editable) |
+| **Yaesu CAT** | FT-991A, FT-891, FT-710, FTDX10, FTDX101, other | default baud |
+| **Kenwood / Elecraft** | TS-480, TS-590S/SG, TS-890S, K3/K3S, KX2/KX3, other | default baud |
+
+Kenwood and Elecraft share Yaesu's ASCII-and-semicolon framing but send
+**11 digits** in a frequency message where Yaesu sends 9, and query mode
+without a VFO digit — which is why they are a separate driver rather than a
+setting. Each driver checks the exact message length, so selecting the wrong
+radio shows **no reading at all** instead of a plausible-looking wrong
+frequency.
+
+**Only the IC-706MKIIG and FT-991A have been run against real hardware.**
+Everything else is built from the published protocol and is labelled
+`(untested)` in the picker, with a note in the panel. If you try one and it
+works — or doesn't — say so and the label comes off. Adding a family means
+adding one row to `RIG_TYPES` with its `poll`, `tune` and `parse`; nothing
+else in the rig layer changes.
 
 ## On-screen keyboards
 
