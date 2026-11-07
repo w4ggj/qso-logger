@@ -1,0 +1,63 @@
+name: Build offline callbook
+
+# The FCC refreshes the complete weekly dump on Sundays, so this runs Monday
+# morning UTC. An off-the-hour minute keeps it out of the :00 scheduling crush,
+# where GitHub delays or drops runs.
+on:
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: offline-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the data
+        run: tools/build-offline-data.sh out
+
+      - name: Sanity-check before publishing
+        run: |
+          set -euo pipefail
+          COUNT=$(python3 -c "import json;print(json.load(open('out/meta.json'))['callsigns'])")
+          echo "callsigns: $COUNT"
+          # A good build is ~820k. Anything far below that means the FCC file
+          # was truncated or the layout moved; publishing it would quietly
+          # replace a working callbook on every phone with a broken one.
+          if [ "$COUNT" -lt 700000 ]; then
+            echo "::error::only $COUNT callsigns — refusing to publish"
+            exit 1
+          fi
+          gzip -t out/callbook.psv.gz
+          python3 -c "
+          import json
+          d = json.load(open('out/cty.json'))
+          assert len(d['entities']) > 300, d and len(d['entities'])
+          assert len(d['prefixes']) > 5000
+          print('cty entities:', len(d['entities']), 'prefixes:', len(d['prefixes']))
+          "
+
+      - name: Publish to the data branch
+        run: |
+          set -euo pipefail
+          cd out
+          git init -q
+          git checkout -q -b data
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Offline callbook $(date -u +%F)"
+          # Force-push a single orphan commit each week. The data never enters
+          # main's history, so cloning the app stays small however long this
+          # job keeps running.
+          git push -q --force \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" data

@@ -1,11 +1,14 @@
-/* TavaOne // QSO Logger — Service Worker v16 */
+/* TavaOne // QSO Logger — Service Worker v20 */
 
-const CACHE = 'tavaone-qso-v19';
+const CACHE = 'tavaone-qso-v20';
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  /* The DXCC prefix table — country lookup has to survive a cold start with
+     no signal, so it is pre-cached with the shell rather than fetched lazily. */
+  './cty.json',
   'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap'
 ];
 
