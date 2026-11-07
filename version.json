@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-07-17",
-  "notes": "Offline callsign lookup: bundled DXCC prefix table plus an optional FCC callbook download"
+  "build": "2026-11-07-18",
+  "notes": "Backup and restore: export, merge, and an auto-written backup file where the browser supports it"
 }
