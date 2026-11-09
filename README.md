@@ -222,6 +222,34 @@ polling, wheel tuning, band memory, autofill) is shared.
 ---
 
 
+### Serial control lines, and PTT
+
+The app holds **both DTR and RTS down** and never raises either. On most
+modern radios one of those lines can be mapped to SEND/PTT — that is how some
+programs key the rig — so raising one transmits. This app never transmits, so
+it has no reason to raise them. Earlier builds raised DTR for cables that take
+their power from a handshake line; that is now an **opt-in toggle, off by
+default**, and turning it on warns you first.
+
+One limit is the browser's: Web Serial takes no signal options when opening a
+port, and what it leaves the lines at beforehand is undocumented — not in the
+spec, not in Chrome's docs. The app lowers them as its first action, so the
+worst case is a brief blip rather than a held carrier, but it cannot be
+eliminated from a web page.
+
+**Nothing on a working radio needs changing.** A station set up for WSJT-X or
+N1MM is already configured correctly.
+
+### CI-V baud
+
+The CI-V list runs from **1200 to 115200**. A modern Icom on USB is often set
+far above the old 19200 ceiling — a 7300 configured for digital modes is
+usually on 115200 — and it has to match `SET → Connectors → CI-V → CI-V Baud
+Rate` on the radio. A mismatch is not merely silent: the radio decodes the
+garbage it receives, and some of what it decodes are commands it acts on. If
+nothing is read back within a few seconds the app now says the baud is the
+likely cause rather than sitting on "reading…".
+
 ### Supported radios
 
 The picker is a list of models; each one selects a protocol driver and seeds
