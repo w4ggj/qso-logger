@@ -272,9 +272,8 @@ radios, so choosing it asks first — rig control almost never needs it.
 And **Web Serial has no XON/XOFF**, so it is not offered rather than offered
 and silently ignored.
 
-Defaults come from each model, falling back to the protocol's. Only the
-IC-7300 has evidence behind its line settings (115200, 2 stop — what Hamlib
-opens it with, per a working WSJT-X setup); everything else starts at the
+Defaults come from each model, falling back to the protocol's. The IC-7300's
+are confirmed on air (115200, 8N2, address 94); everything else starts at the
 protocol default and is yours to correct.
 
 If the readout is slow rather than absent, the framing is the first thing to
@@ -314,7 +313,7 @@ setting. Each driver checks the exact message length, so selecting the wrong
 radio shows **no reading at all** instead of a plausible-looking wrong
 frequency.
 
-**Only the IC-706MKIIG and FT-991A have been run against real hardware.**
+**The IC-706MKIIG, FT-991A and IC-7300 have been run against real hardware.**
 Everything else is built from the published protocol and is labelled
 `(untested)` in the picker, with a note in the panel. If you try one and it
 works — or doesn't — say so and the label comes off. Adding a family means

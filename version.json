@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-09-23",
-  "notes": "CAT polling is reply-driven rather than timer-driven, so the readout tracks the dial"
+  "build": "2026-11-09-24",
+  "notes": "IC-7300 confirmed on air - no longer labelled untested"
 }
