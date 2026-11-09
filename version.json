@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-07-19",
-  "notes": "Usable by anyone: own station details, per-device PIN, and Kenwood/Elecraft plus Icom and Yaesu model presets"
+  "build": "2026-11-09-20",
+  "notes": "Never raise DTR or RTS on connect - the app was keying radios that use those lines for PTT"
 }

@@ -1330,6 +1330,15 @@ footer {
               <span class="rig-toggle-dot"></span><span class="rig-toggle-lbl">Auto-fill: ON</span>
             </div>
           </div>
+
+          <div style="display:flex;align-items:center;justify-content:flex-end;margin:4px 0;">
+            <div id="rig-dtr" class="rig-toggle" role="button" tabindex="0" aria-pressed="false"
+                 onclick="toggleRigDtr()"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleRigDtr();}"
+                 title="Only for a CI-V interface powered from the handshake line. If the radio has SEND mapped to DTR, raising it transmits.">
+              <span class="rig-toggle-dot"></span><span class="rig-toggle-lbl">DTR: DOWN</span>
+            </div>
+          </div>
           <button class="qrz-help-toggle" onclick="toggleRigHelp()">Setup guide ▾</button>
           <div class="udp-help" id="rig-help">
             Connects to the radio over the CAT cable using your browser's Web Serial API &mdash;
@@ -1358,9 +1367,17 @@ footer {
             Known chips: <code>CH340/CH341</code>, <code>CP210x</code>, <code>FTDI</code>, <code>PL2303</code> and
             plain <code>CDC-ACM</code>. The readout names the chip it found, and shows the raw
             <code>VID:PID</code> when it does not recognise one &mdash; send me those four digits and I can add it.
-            On connect the app raises <strong>DTR</strong> and leaves <strong>RTS</strong> down, since RTS is the
-            line hardware PTT interfaces usually key on; if your cable draws its power from RTS this is where to
-            look first.<br><br>
+            On connect the app holds <strong>both DTR and RTS down</strong>. On most modern radios one of those
+            lines is <strong>SEND/PTT</strong> &mdash; that is how WSJT-X and N1MM key the rig &mdash; so raising
+            either one puts the radio straight into transmit. This app never transmits, so it never raises them.
+            The <strong>DTR</strong> toggle is only for an outboard CI-V level converter that takes its power from
+            the handshake line; leave it DOWN unless you have one, and expect the radio to key if SEND is mapped
+            to DTR.<br><br>
+            One limit worth knowing: the browser gives no way to choose the line state as part of opening the port,
+            and what it leaves them at beforehand is undocumented. The app puts them down as its first action, so
+            the worst case is a brief blip rather than a stuck carrier &mdash; but it cannot be eliminated from a
+            web page. Nothing on your radio needs changing: a station that works with WSJT-X is already correct.
+            <br><br>
             Click <strong>CONNECT RIG</strong>, pick the CAT cable's serial port in the browser prompt, and the live
             frequency, band, and mode fill in automatically as you tune. Switch <strong>Auto-fill</strong> off to just
             monitor without overwriting the entry fields.<br><br>
@@ -3480,10 +3497,54 @@ const CIV_CTRL = 0xE0;
    ═══════════════════════════════════════════════════ */
 const USB_LINE_8N1 = { bits: 8, parity: 0, stop: 0 };
 
-/* On connect: DTR up, RTS down. Plenty of cables take their power from a
-   handshake line, but RTS is also the line hardware PTT interfaces key on,
-   and a stuck transmit is a worse first experience than a dead cable. */
-const USB_DTR = true, USB_RTS = false;
+/* DTR and RTS are PTT on a lot of stations. A radio with a USB port — an
+   IC-7300, IC-705, FT-991A and most modern sets — can map SEND to either
+   line so WSJT-X can key it, and then raising that line transmits. Raising
+   DTR on connect did exactly that: plug in, connect, and the radio went
+   straight into transmit with no audio and no operator.
+
+   So both lines stay DOWN unless the operator turns DTR on, which is only
+   for an outboard CI-V level converter that steals its power from the
+   handshake line. Nothing in the app ever raises RTS.
+
+   A station set up for WSJT-X or N1MM is configured correctly: those keep PTT
+   down until they transmit, and so must this. Nothing here should ever ask an
+   operator to change a working radio.
+
+   One caveat is the browser's, not the station's. Web Serial takes no signal
+   options in open(), and what it leaves DTR and RTS at between open() and the
+   first setSignals() is specified nowhere — not in the spec, not in Chrome's
+   docs. So there is a sub-second window at connect that no web page can close.
+   Lowering the lines first thing shrinks it to a blip instead of a stuck
+   carrier. */
+const RIG_DTR_KEY = 'w4ggj_rig_dtr';
+let rigRaiseDtr = false;      // never on unless the operator asks
+const USB_RTS = false;        // never, under any setting
+
+function setRigDtr(on) {
+  rigRaiseDtr = !!on;
+  try { localStorage.setItem(RIG_DTR_KEY, rigRaiseDtr ? '1' : '0'); } catch (e) {}
+  paintRigDtr();
+  if (rigConnected) toast('Reconnect the rig for this to take effect', 'wrn');
+}
+
+function toggleRigDtr() {
+  if (!rigRaiseDtr && !confirm(
+      'Raise DTR on connect?\n\n' +
+      'Only do this if your CI-V interface takes its power from the serial ' +
+      'handshake line. If the radio has SEND or PTT mapped to DTR, this will ' +
+      'put it into TRANSMIT as soon as you connect.')) return;
+  setRigDtr(!rigRaiseDtr);
+}
+
+function paintRigDtr() {
+  const el = $('rig-dtr');
+  if (!el) return;
+  el.classList.toggle('on', rigRaiseDtr);
+  el.setAttribute('aria-pressed', rigRaiseDtr ? 'true' : 'false');
+  const lbl = el.querySelector('.rig-toggle-lbl');
+  if (lbl) lbl.textContent = 'DTR: ' + (rigRaiseDtr ? 'UP' : 'DOWN');
+}
 
 function usbBulkEndpoints(iface) {
   let epIn = 0, epOut = 0, packet = 64;
@@ -3538,7 +3599,7 @@ const USB_SERIAL_DRIVERS = [
       await ch340Out(dev, 0xa1, 0x501f, 0xd90a);
       await ch340Baud(dev, baud);
       // The chip wants the complement of the wanted lines (DTR 0x20, RTS 0x40)
-      await ch340Out(dev, 0xa4, (~((USB_DTR ? 0x20 : 0) | (USB_RTS ? 0x40 : 0))) & 0xffff, 0);
+      await ch340Out(dev, 0xa4, (~((rigRaiseDtr ? 0x20 : 0) | (USB_RTS ? 0x40 : 0))) & 0xffff, 0);
       return Object.assign({ iface: iface.interfaceNumber, header: 0 }, usbBulkEndpoints(iface));
     }
   },
@@ -3585,7 +3646,7 @@ const USB_SERIAL_DRIVERS = [
       let index = (sub >= 3 && sub !== 4) ? 1 : 0;
 
       await out(0, 0, port);                            // RESET_ALL
-      await out(1, (USB_DTR ? 0x0101 : 0x0100) , port); // MODEM_CTRL: DTR
+      await out(1, (rigRaiseDtr ? 0x0101 : 0x0100) , port); // MODEM_CTRL: DTR
       await out(1, (USB_RTS ? 0x0202 : 0x0200) , port); // MODEM_CTRL: RTS
       await out(3, value, index);                       // SET_BAUD_RATE
       await out(4, 0x0008, port);                       // SET_DATA: 8N1
@@ -3606,7 +3667,7 @@ const USB_SERIAL_DRIVERS = [
         { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: n }, line);
       await dev.controlTransferOut(
         { requestType: 'class', recipient: 'interface', request: 0x22,
-          value: (USB_DTR ? 1 : 0) | (USB_RTS ? 2 : 0), index: n });
+          value: (rigRaiseDtr ? 1 : 0) | (USB_RTS ? 2 : 0), index: n });
       return Object.assign({ iface: n, header: 0 }, usbBulkEndpoints(iface));
     }
   },
@@ -3629,7 +3690,7 @@ const USB_SERIAL_DRIVERS = [
         { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: cn }, line);
       await dev.controlTransferOut(
         { requestType: 'class', recipient: 'interface', request: 0x22,
-          value: (USB_DTR ? 1 : 0) | (USB_RTS ? 2 : 0), index: cn });
+          value: (rigRaiseDtr ? 1 : 0) | (USB_RTS ? 2 : 0), index: cn });
       return Object.assign({ iface: data.interfaceNumber, header: 0 }, usbBulkEndpoints(data));
     }
   }
@@ -3693,8 +3754,13 @@ const RIG_MODEL_KEY = 'w4ggj_rig_model';
 const RIG_TYPES = {
   civ: {
     label: 'Icom CI-V',
-    bauds: [19200, 9600, 4800, 1200],  defBaud: 19200, addr: true,
-    baudTitle: 'CI-V baud — must match SET → CI-V Baud on the radio',
+    /* A modern Icom runs its USB CI-V far faster than the old 19200 ceiling
+       — a 7300 set up for WSJT-X is usually on 115200. Offering only the
+       slow rates meant the app could not match such a radio at all, and a
+       mismatched CI-V bus is not merely silent: the radio decodes the
+       garbage, and some of what it decodes are commands it acts on. */
+    bauds: [115200, 57600, 38400, 19200, 9600, 4800, 1200], defBaud: 19200, addr: true,
+    baudTitle: 'CI-V baud — must match SET → Connectors → CI-V → CI-V Baud Rate on the radio',
     poll()   { civSend(0x03); civSend(0x04); },
     tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
     parse()  { civParse(); }
@@ -3757,7 +3823,8 @@ let rigType = 'civ';
 let rigPort = null, rigReader = null, rigWriter = null;
 let rigLink = null;                 // active transport: Web Serial or WebUSB
 let rigLinkKind = 'serial';         // which one the user picked
-let rigPollTimer = null, rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
+let rigPollTimer = null, rigQuietTimer = null;
+let rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '', rigLastHz = 0;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
 
@@ -3937,6 +4004,16 @@ async function rigConnect(port, auto) {
     } else {
       rigPort = port || await navigator.serial.requestPort();
       await rigPort.open({ baudRate: baud });
+      /* Before anything else, and before any data: open() takes no signal
+         options and leaves DTR/RTS in a state nobody specifies, so put them
+         where we want them explicitly rather than inheriting a default that
+         may be keying the transmitter. */
+      try {
+        await rigPort.setSignals({ dataTerminalReady: rigRaiseDtr, requestToSend: false });
+      } catch (e) {
+        /* Some adapters refuse; say so rather than transmit in silence. */
+        toast('Could not set DTR/RTS on this adapter — disconnect if the rig keys up', 'wrn');
+      }
       rigWriter = rigPort.writable.getWriter();
       rigLink = {
         kind: 'serial', label: 'Serial port', port: rigPort,
@@ -3949,6 +4026,9 @@ async function rigConnect(port, auto) {
         close: async () => {
           try { if (rigReader) { await rigReader.cancel(); rigReader.releaseLock(); } } catch (e) {}
           try { if (rigWriter) rigWriter.releaseLock(); } catch (e) {}
+          /* Leave the lines down, so nothing is held keyed by a port that is
+             about to be closed or handed to another program. */
+          try { await rigPort.setSignals({ dataTerminalReady: false, requestToSend: false }); } catch (e) {}
           try { await rigPort.close(); } catch (e) {}
         }
       };
@@ -3962,6 +4042,17 @@ async function rigConnect(port, auto) {
     rememberRigPort();             // so a refresh can pick this cable back up
     rigReadLoop();                 // start listening (async, runs until disconnect)
     rigPoll();                     // immediate first read
+    /* Nothing decoded after several polls means the rate is wrong far more
+       often than the cable is. Say so, because the alternative is an operator
+       staring at "reading..." while the radio is fed bytes it cannot parse. */
+    clearTimeout(rigQuietTimer);
+    rigQuietTimer = setTimeout(() => {
+      if (rigConnected && !rigLastHz) {
+        setRigStatus('err', 'No reply — check the baud matches the radio');
+        toast('No reply from the radio. The baud almost certainly does not match '
+            + 'the rate set in its menu — disconnect and try another.', 'wrn');
+      }
+    }, 4000);
     rigPollTimer = setInterval(rigPoll, 750);
     if (!rigConnect._wired) {
       if (navigator.serial) navigator.serial.addEventListener('disconnect', e => {
@@ -4028,6 +4119,7 @@ async function rigAutoReconnect() {
 
 async function rigDisconnect(silent, why) {
   if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
+  if (rigQuietTimer) { clearTimeout(rigQuietTimer); rigQuietTimer = null; }
   try { if (rigLink) await rigLink.close(); } catch (e) {}
   rigLink = null;
   rigPort = rigReader = rigWriter = null;
@@ -4305,7 +4397,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-07-19';
+const APP_BUILD = '2026-11-09-20';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -4404,6 +4496,10 @@ paintPin();
   if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
   paintRigType();                  // builds the baud list for this rig, restores its saved rate
   rigAutofill = localStorage.getItem('w4ggj_rig_autofill') !== '0';
+  /* Opt-in only: an absent setting means down, so an upgrade can never
+     inherit a raised line from the build that used to raise one. */
+  rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
+  paintRigDtr();
   paintAutofill();
   if (!rigSupported() && !usbSupported()) {
     const btn = $('rig-btn');
