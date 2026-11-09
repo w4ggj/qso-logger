@@ -250,6 +250,23 @@ garbage it receives, and some of what it decodes are commands it acts on. If
 nothing is read back within a few seconds the app now says the baud is the
 likely cause rather than sitting on "reading…".
 
+### Stop bits, and a slow readout
+
+The port is opened with **1 stop bit** by default, selectable to **2** next to
+the baud picker. Hamlib opens an IC-7300 with two, which is what WSJT-X shows
+in its serial settings; at 115200 a mismatch does not fail cleanly — enough
+replies are corrupted that only the occasional one survives the parser, and
+the frequency lags by seconds rather than not appearing at all. If the readout
+is slow, this is the first thing to change.
+
+While connected the panel shows **frames per second, total frames and total
+bytes**. The difference between the last two is the diagnosis: bytes arriving
+with nothing understood means the framing is wrong, while no bytes at all
+means the baud or the cable is.
+
+CAT is polled every **250 ms**. A poll costs about 0.02 ms of work — measured,
+not estimated — so the old 750 ms interval was pure latency.
+
 ### Supported radios
 
 The picker is a list of models; each one selects a protocol driver and seeds

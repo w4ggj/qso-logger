@@ -665,6 +665,12 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .bk-status.warn  { color: var(--amber); }
 .bk-status.warn strong { color: var(--amber); }
 
+.rig-stats {
+  font-family: var(--mono); font-size: 0.58rem; color: var(--muted);
+  letter-spacing: 0.04em; margin-top: 4px;
+}
+.rig-stats.bad { color: var(--amber); }
+
 .rig-untested {
   margin-top: 6px; font-size: 0.6rem; line-height: 1.45;
   color: var(--amber); letter-spacing: 0.03em;
@@ -1313,6 +1319,11 @@ footer {
 
           <div class="rig-row">
             <select id="rig-baud"></select>
+            <select id="rig-stop" onchange="setRigStop(this.value)" style="width:62px"
+              title="Stop bits. Match what a working program uses for this radio &mdash; Hamlib opens an IC-7300 with 2.">
+              <option value="1">1 stop</option>
+              <option value="2">2 stop</option>
+            </select>
             <input type="text" id="rig-addr" value="58" maxlength="2" title="CI-V address (hex) — IC-706MKIIG = 58"
               style="width:52px;text-transform:uppercase" placeholder="58">
             <button class="btn btn-outline" id="rig-btn" onclick="rigToggle()" style="padding:7px 10px;font-size:0.62rem;flex:1">CONNECT RIG</button>
@@ -1323,6 +1334,7 @@ footer {
               <span class="udp-dot off" id="rig-dot"></span>
               <span id="rig-readout" style="font-family:var(--mono);font-size:0.7rem;letter-spacing:0.04em;color:var(--muted)">Not connected</span>
             </div>
+            <div id="rig-stats" class="rig-stats" style="display:none"></div>
             <div id="rig-autofill" class="rig-toggle on" role="button" tabindex="0" aria-pressed="true"
                  onclick="toggleAutofill()"
                  onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleAutofill();}"
@@ -3517,6 +3529,20 @@ const USB_LINE_8N1 = { bits: 8, parity: 0, stop: 0 };
    docs. So there is a sub-second window at connect that no web page can close.
    Lowering the lines first thing shrinks it to a blip instead of a stuck
    carrier. */
+const RIG_STOP_KEY = 'w4ggj_rig_stop';
+/* Hamlib opens an IC-7300 with two stop bits, which is what WSJT-X shows in
+   its serial settings. We opened with one, the Web Serial default, and at
+   115200 that mismatch corrupts enough replies that only the occasional one
+   survives the parser — a readout that lags by seconds rather than one that
+   fails outright. Adjustable, because the right answer differs per radio. */
+let rigStopBits = 1;
+
+function setRigStop(n) {
+  rigStopBits = (Number(n) === 2) ? 2 : 1;
+  try { localStorage.setItem(RIG_STOP_KEY, String(rigStopBits)); } catch (e) {}
+  if (rigConnected) toast('Reconnect the rig for the stop bits to take effect', 'wrn');
+}
+
 const RIG_DTR_KEY = 'w4ggj_rig_dtr';
 let rigRaiseDtr = false;      // never on unless the operator asks
 const USB_RTS = false;        // never, under any setting
@@ -3823,7 +3849,11 @@ let rigType = 'civ';
 let rigPort = null, rigReader = null, rigWriter = null;
 let rigLink = null;                 // active transport: Web Serial or WebUSB
 let rigLinkKind = 'serial';         // which one the user picked
-let rigPollTimer = null, rigQuietTimer = null;
+let rigPollTimer = null, rigQuietTimer = null, rigStatsTimer = null;
+/* Bytes in versus frames understood. The difference is the whole diagnosis:
+   plenty of bytes and no frames means the line settings are wrong, while no
+   bytes at all means the baud or the cable is. */
+let rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0 };
 let rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '', rigLastHz = 0;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
@@ -3966,6 +3996,23 @@ function toggleRigHelp() {
   h.style.display = vis ? 'none' : 'block';
 }
 
+/* Updated once a second while connected. Bytes arriving with no frames
+   understood is the signature of wrong line settings rather than a wrong
+   baud, and that distinction is otherwise invisible to the operator. */
+function paintRigStats() {
+  const el = $('rig-stats');
+  if (!el) return;
+  if (!rigConnected) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  rigStats.rate = rigStats.frames - rigStats.lastFrames;
+  rigStats.lastFrames = rigStats.frames;
+  const bad = rigStats.bytes > 0 && rigStats.frames === 0;
+  el.classList.toggle('bad', bad);
+  el.textContent = bad
+    ? `${rigStats.bytes} bytes in, 0 understood \u2014 try the other stop-bits setting`
+    : `${rigStats.rate}/s \u00b7 ${rigStats.frames} frames \u00b7 ${rigStats.bytes} bytes`;
+}
+
 function setRigStatus(state, txt) {
   const dot = $('rig-dot');
   if (dot) dot.className = 'udp-dot ' + (state === 'ok' ? 'ok' : state === 'err' ? 'err' : 'off');
@@ -4003,7 +4050,7 @@ async function rigConnect(port, auto) {
       rigLink = await usbOpenLink(dev, baud);
     } else {
       rigPort = port || await navigator.serial.requestPort();
-      await rigPort.open({ baudRate: baud });
+      await rigPort.open({ baudRate: baud, stopBits: rigStopBits });
       /* Before anything else, and before any data: open() takes no signal
          options and leaves DTR/RTS in a state nobody specifies, so put them
          where we want them explicitly rather than inheriting a default that
@@ -4053,7 +4100,13 @@ async function rigConnect(port, auto) {
             + 'the rate set in its menu — disconnect and try another.', 'wrn');
       }
     }, 4000);
-    rigPollTimer = setInterval(rigPoll, 750);
+    /* A poll costs about 0.02 ms of work, so the old 750 ms interval was
+       pure latency: the readout could sit three quarters of a second behind
+       a dial that had already stopped moving. */
+    rigPollTimer = setInterval(rigPoll, 250);
+    rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0 };
+    clearInterval(rigStatsTimer);
+    rigStatsTimer = setInterval(paintRigStats, 1000);
     if (!rigConnect._wired) {
       if (navigator.serial) navigator.serial.addEventListener('disconnect', e => {
         if (rigPort && e.target === rigPort) rigDisconnect(false, 'Cable unplugged');
@@ -4120,6 +4173,8 @@ async function rigAutoReconnect() {
 async function rigDisconnect(silent, why) {
   if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
   if (rigQuietTimer) { clearTimeout(rigQuietTimer); rigQuietTimer = null; }
+  if (rigStatsTimer) { clearInterval(rigStatsTimer); rigStatsTimer = null; }
+  const st = $('rig-stats'); if (st) st.style.display = 'none';
   try { if (rigLink) await rigLink.close(); } catch (e) {}
   rigLink = null;
   rigPort = rigReader = rigWriter = null;
@@ -4161,7 +4216,11 @@ async function rigReadLoop() {
     while (link && link === rigLink) {
       const value = await link.read();
       if (value === null) break;
-      if (value && value.length) { for (const b of value) rigBuf.push(b); rigParse(); }
+      if (value && value.length) {
+        rigStats.bytes += value.length;
+        for (const b of value) rigBuf.push(b);
+        rigParse();
+      }
     }
   } catch (e) { /* cancelled on disconnect */ }
 }
@@ -4214,6 +4273,7 @@ function civHandleFrame(f) {
   if (f.length < 6) return;
   const from = f[3], cmd = f[4];
   if (from !== rigCivAddr) return;         // only trust frames FROM the radio (ignores bus echo)
+  rigStats.frames++;
   const data = f.slice(5, f.length - 1);
   if (cmd === 0x03 || cmd === 0x00) {      // freq read reply, or transceive broadcast
     const hz = civDecodeFreq(data);
@@ -4397,7 +4457,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-09-20';
+const APP_BUILD = '2026-11-09-21';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -4499,6 +4559,8 @@ paintPin();
   /* Opt-in only: an absent setting means down, so an upgrade can never
      inherit a raised line from the build that used to raise one. */
   rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
+  rigStopBits = localStorage.getItem(RIG_STOP_KEY) === '2' ? 2 : 1;
+  if ($('rig-stop')) $('rig-stop').value = String(rigStopBits);
   paintRigDtr();
   paintAutofill();
   if (!rigSupported() && !usbSupported()) {

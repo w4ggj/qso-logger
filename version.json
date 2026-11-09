@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-09-20",
-  "notes": "Never raise DTR or RTS on connect - the app was keying radios that use those lines for PTT"
+  "build": "2026-11-09-21",
+  "notes": "Selectable stop bits, 250 ms CAT polling, and a live frames/bytes readout for diagnosing a slow link"
 }
