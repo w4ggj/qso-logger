@@ -3890,7 +3890,8 @@ const RIG_TYPES = {
        garbage, and some of what it decodes are commands it acts on. */
     bauds: [115200, 57600, 38400, 19200, 9600, 4800, 1200], defBaud: 19200, addr: true,
     baudTitle: 'CI-V baud — must match SET → Connectors → CI-V → CI-V Baud Rate on the radio',
-    poll()   { civSend(0x03); civSend(0x04); },
+    poll()     { civSend(0x03); },
+    pollMode() { civSend(0x04); },
     tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
     parse()  { civParse(); }
   },
@@ -3899,7 +3900,8 @@ const RIG_TYPES = {
     bauds: [38400, 19200, 9600, 4800], defBaud: 4800,  addr: false,
     baudTitle: 'CAT baud — must match MENU 031 CAT RATE on the radio',
     /* MD0 on Yaesu: the 0 selects the VFO. Kenwood has no such digit. */
-    poll()   { catSend('FA;'); catSend('MD0;'); },
+    poll()     { catSend('FA;'); },
+    pollMode() { catSend('MD0;'); },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';'); },
     parse()  { catParse(yaesuHandleMsg); }
   },
@@ -3910,7 +3912,8 @@ const RIG_TYPES = {
     /* Same ASCII-and-semicolon shape as Yaesu, but FA carries 11 digits
        rather than 9 and the mode query has no VFO digit. Those two
        differences are exactly why this is its own driver. */
-    poll()   { catSend('FA;'); catSend('MD;'); },
+    poll()     { catSend('FA;'); },
+    pollMode() { catSend('MD;'); },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(11, '0') + ';'); },
     parse()  { catParse(kenwoodHandleMsg); }
   }
@@ -3959,7 +3962,7 @@ let rigPollTimer = null, rigQuietTimer = null, rigStatsTimer = null;
 /* Bytes in versus frames understood. The difference is the whole diagnosis:
    plenty of bytes and no frames means the line settings are wrong, while no
    bytes at all means the baud or the cable is. */
-let rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0 };
+let rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
 let rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '', rigLastHz = 0;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
@@ -4124,9 +4127,11 @@ function paintRigStats() {
   rigStats.lastFrames = rigStats.frames;
   const bad = rigStats.bytes > 0 && rigStats.frames === 0;
   el.classList.toggle('bad', bad);
+  const age = rigStats.last ? Date.now() - rigStats.last : -1;
   el.textContent = bad
     ? `${rigStats.bytes} bytes in, 0 understood \u2014 try the other stop-bits setting`
-    : `${rigStats.rate}/s \u00b7 ${rigStats.frames} frames \u00b7 ${rigStats.bytes} bytes`;
+    : `${rigStats.rate}/s \u00b7 last ${age < 0 ? '\u2014' : age + 'ms'} \u00b7 `
+      + `${rigStats.frames} frames \u00b7 ${rigStats.bytes} bytes`;
 }
 
 function setRigStatus(state, txt) {
@@ -4226,8 +4231,9 @@ async function rigConnect(port, auto) {
     /* A poll costs about 0.02 ms of work, so the old 750 ms interval was
        pure latency: the readout could sit three quarters of a second behind
        a dial that had already stopped moving. */
-    rigPollTimer = setInterval(rigPoll, 250);
-    rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0 };
+    rigModeDue = 0;
+    rigPollTimer = setInterval(rigPoll, 1000);   // watchdog; replies drive the rest
+    rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
     clearInterval(rigStatsTimer);
     rigStatsTimer = setInterval(paintRigStats, 1000);
     if (!rigConnect._wired) {
@@ -4295,6 +4301,7 @@ async function rigAutoReconnect() {
 
 async function rigDisconnect(silent, why) {
   if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
+  if (rigNextPoll) { clearTimeout(rigNextPoll); rigNextPoll = null; }
   if (rigQuietTimer) { clearTimeout(rigQuietTimer); rigQuietTimer = null; }
   if (rigStatsTimer) { clearInterval(rigStatsTimer); rigStatsTimer = null; }
   const st = $('rig-stats'); if (st) st.style.display = 'none';
@@ -4328,8 +4335,47 @@ async function catSend(str) {
 /* ─── Driver dispatch ───
    Everything protocol-specific now lives in RIG_TYPES. These three only find
    the active driver, so a new radio family never edits this block. */
-function rigDriver()     { return RIG_TYPES[rigType] || RIG_TYPES.civ; }
-function rigPoll()       { rigDriver().poll(); }        // read freq, read mode
+function rigDriver() { return RIG_TYPES[rigType] || RIG_TYPES.civ; }
+
+/* Polling on a fixed timer means every reading waits for the next tick, so the
+   readout lags by up to a whole interval however fast the radio answers. Ask
+   again as soon as a reply lands instead, and the lag becomes the round trip
+   — a few milliseconds at 115200 — rather than the interval.
+
+   The interval stays as a watchdog for when replies stop coming, and a floor
+   between polls keeps a fast radio from being hammered. Mode is asked for far
+   less often, because it changes when the operator turns a knob, not
+   continuously like frequency. */
+const RIG_POLL_GAP  = 100;    // ms to wait after a reply before asking again
+const RIG_MODE_GAP  = 2000;   // ms between mode queries
+let rigNextPoll = null, rigModeDue = 0;
+
+function rigPoll() {
+  const d = rigDriver();
+  d.poll();
+  if (Date.now() >= rigModeDue && d.pollMode) {
+    d.pollMode();
+    rigModeDue = Date.now() + RIG_MODE_GAP;
+  }
+}
+
+/* Called when a frame decodes: the radio is alive and answering, so the next
+   question can go out now rather than at the next tick. */
+/* Every driver calls this when it understands a frame: it feeds the counters
+   and tells the poller the radio is answering. Previously only the CI-V
+   driver counted, so the Yaesu and Kenwood readouts had no diagnostics and
+   could never pipeline. */
+function rigFrameSeen() {
+  rigStats.frames++;
+  rigStats.last = Date.now();
+  rigPollSoon();
+}
+
+function rigPollSoon() {
+  if (!rigConnected) return;
+  clearTimeout(rigNextPoll);
+  rigNextPoll = setTimeout(() => { if (rigConnected) rigPoll(); }, RIG_POLL_GAP);
+}
 function rigTuneSend(hz) { rigDriver().tune(hz); }
 function rigParse()      { rigDriver().parse(); }
 
@@ -4385,8 +4431,9 @@ function yaesuHandleMsg(msg) {
      number is worse than none, because it looks like a working radio. */
   if (msg.slice(0, 2) === 'FA' && msg.length === 11) {
     const hz = parseInt(msg.slice(2, 11), 10);
-    if (hz) rigSetFreq(hz);
+    if (hz) { rigFrameSeen(); rigSetFreq(hz); }
   } else if (msg.slice(0, 3) === 'MD0' && msg.length >= 4) {
+    rigFrameSeen();
     yaesuSetMode(msg.charAt(3).toUpperCase());
   }
 }
@@ -4396,7 +4443,7 @@ function civHandleFrame(f) {
   if (f.length < 6) return;
   const from = f[3], cmd = f[4];
   if (from !== rigCivAddr) return;         // only trust frames FROM the radio (ignores bus echo)
-  rigStats.frames++;
+  rigFrameSeen();
   const data = f.slice(5, f.length - 1);
   if (cmd === 0x03 || cmd === 0x00) {      // freq read reply, or transceive broadcast
     const hz = civDecodeFreq(data);
@@ -4492,8 +4539,9 @@ function kenwoodHandleMsg(msg) {
   /* Exactly 13: 'FA' plus 11 digits. Same reasoning as the Yaesu driver. */
   if (msg.slice(0, 2) === 'FA' && msg.length === 13) {
     const hz = parseInt(msg.slice(2, 13), 10);
-    if (hz) rigSetFreq(hz);
+    if (hz) { rigFrameSeen(); rigSetFreq(hz); }
   } else if (msg.slice(0, 2) === 'MD' && msg.length >= 3) {
+    rigFrameSeen();
     kenwoodSetMode(msg.charAt(2));
   }
 }
@@ -4580,7 +4628,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-09-22';
+const APP_BUILD = '2026-11-09-23';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

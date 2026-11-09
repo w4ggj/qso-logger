@@ -286,8 +286,15 @@ bytes**. The difference between the last two is the diagnosis: bytes arriving
 with nothing understood means the framing is wrong, while no bytes at all
 means the baud or the cable is.
 
-CAT is polled every **250 ms**. A poll costs about 0.02 ms of work — measured,
-not estimated — so the old 750 ms interval was pure latency.
+**CAT polling is reply-driven, not timer-driven.** A fixed interval means
+every reading waits for the next tick however fast the radio answers, so the
+next question goes out as soon as a reply lands instead. The lag becomes the
+round trip rather than the interval — about 100 ms in practice. A 1 s interval
+remains as a watchdog for when replies stop, and a 100 ms floor keeps a fast
+radio from being hammered.
+
+Mode is asked for every 2 s rather than at frequency rate: it changes when
+somebody turns a knob, not continuously.
 
 ### Supported radios
 
