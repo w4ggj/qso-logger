@@ -250,6 +250,45 @@ garbage it receives, and some of what it decodes are commands it acts on. If
 nothing is read back within a few seconds the app now says the baud is the
 likely cause rather than sitting on "reading…".
 
+### Serial parameters
+
+The full line is settable, the way any other rig-control program does it:
+
+| | Choices |
+|---|---|
+| Baud | 1200 – 115200 |
+| Data bits | 8, 7 |
+| Stop bits | 1, 2 |
+| Parity | none, even, odd |
+| Handshake | none, hardware |
+
+**Settings belong to the radio, not the protocol.** An IC-7300 and an IC-706
+are both CI-V but want different rates, so each model keeps its own; switching
+between them restores what each was last set to. A panel note appears when a
+radio differs from its defaults, with a reset link.
+
+Two cautions. **Hardware handshake drives RTS**, which is SEND/PTT on many
+radios, so choosing it asks first — rig control almost never needs it.
+And **Web Serial has no XON/XOFF**, so it is not offered rather than offered
+and silently ignored.
+
+Defaults come from each model, falling back to the protocol's. Only the
+IC-7300 has evidence behind its line settings (115200, 2 stop — what Hamlib
+opens it with, per a working WSJT-X setup); everything else starts at the
+protocol default and is yours to correct.
+
+If the readout is slow rather than absent, the framing is the first thing to
+change: a mismatch at 115200 does not fail cleanly — enough replies are
+corrupted that only the occasional one survives the parser.
+
+While connected the panel shows **frames per second, total frames and total
+bytes**. The difference between the last two is the diagnosis: bytes arriving
+with nothing understood means the framing is wrong, while no bytes at all
+means the baud or the cable is.
+
+CAT is polled every **250 ms**. A poll costs about 0.02 ms of work — measured,
+not estimated — so the old 750 ms interval was pure latency.
+
 ### Supported radios
 
 The picker is a list of models; each one selects a protocol driver and seeds
