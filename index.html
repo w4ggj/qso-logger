@@ -1318,15 +1318,22 @@ footer {
           </div>
 
           <div class="rig-row">
-            <select id="rig-baud"></select>
-            <select id="rig-stop" onchange="setRigStop(this.value)" style="width:62px"
-              title="Stop bits. Match what a working program uses for this radio &mdash; Hamlib opens an IC-7300 with 2.">
-              <option value="1">1 stop</option>
-              <option value="2">2 stop</option>
-            </select>
+            <select id="rig-baud" onchange="setRigParam('baud', this.value)"></select>
             <input type="text" id="rig-addr" value="58" maxlength="2" title="CI-V address (hex) — IC-706MKIIG = 58"
               style="width:52px;text-transform:uppercase" placeholder="58">
             <button class="btn btn-outline" id="rig-btn" onclick="rigToggle()" style="padding:7px 10px;font-size:0.62rem;flex:1">CONNECT RIG</button>
+          </div>
+
+          <div class="rig-row" style="margin-top:6px;">
+            <select id="rig-data"   onchange="setRigParam('data', this.value)"   title="Data bits"></select>
+            <select id="rig-stop"   onchange="setRigParam('stop', this.value)"   title="Stop bits"></select>
+            <select id="rig-parity" onchange="setRigParam('parity', this.value)" title="Parity"></select>
+            <select id="rig-flow"   onchange="setRigParam('flow', this.value)"
+              title="Handshake. Hardware drives RTS, which is PTT on many radios."></select>
+          </div>
+          <div id="rig-defaults" class="rig-stats" style="display:none">
+            Changed from this radio&rsquo;s defaults &mdash;
+            <a href="#" onclick="resetRigParams();return false;" style="color:var(--amber)">reset</a>
           </div>
 
           <div style="display:flex;align-items:center;justify-content:space-between;margin:8px 0 4px;">
@@ -3509,6 +3516,30 @@ const CIV_CTRL = 0xE0;
    ═══════════════════════════════════════════════════ */
 const USB_LINE_8N1 = { bits: 8, parity: 0, stop: 0 };
 
+/* Every chip spells the line settings differently, so convert once here
+   rather than in five drivers. `p` is {data, stop, parity} as the UI stores
+   them; the numbers are each chip's own encoding, from its datasheet. */
+function usbLine(p) {
+  const d = (p && p.data) || 8;
+  const two = (p && p.stop) === 2;
+  const par = (p && p.parity) || 'none';          // none | even | odd
+  const parNum = par === 'odd' ? 1 : par === 'even' ? 2 : 0;
+  return {
+    data: d, twoStop: two, parity: par, parNum,
+    /* CDC SET_LINE_CODING: stop 0=1 2=2, parity 0=none 1=odd 2=even */
+    cdc:   { stop: two ? 2 : 0, parity: parNum, data: d },
+    /* CP210x SET_LINE_CTL: (data << 8) | (parity << 4) | stopBits */
+    cp210: (d << 8) | (parNum << 4) | (two ? 2 : 0),
+    /* FTDI SET_DATA: data in 0-7, parity in 8-10, stop in 11-13 (2 = 2 stop) */
+    ftdi:  d | (parNum << 8) | (two ? (2 << 11) : 0),
+    /* CH341 LCR: RX|TX enable, 0x03 = 8 data / 0x02 = 7, +0x04 two stop,
+       +0x08 parity enable, +0x10 even */
+    ch341: 0x80 | 0x40 | (d === 7 ? 0x02 : 0x03)
+           | (two ? 0x04 : 0)
+           | (parNum ? 0x08 | (parNum === 2 ? 0x10 : 0) : 0)
+  };
+}
+
 /* DTR and RTS are PTT on a lot of stations. A radio with a USB port — an
    IC-7300, IC-705, FT-991A and most modern sets — can map SEND to either
    line so WSJT-X can key it, and then raising that line transmits. Raising
@@ -3529,18 +3560,90 @@ const USB_LINE_8N1 = { bits: 8, parity: 0, stop: 0 };
    docs. So there is a sub-second window at connect that no web page can close.
    Lowering the lines first thing shrinks it to a blip instead of a stuck
    carrier. */
-const RIG_STOP_KEY = 'w4ggj_rig_stop';
-/* Hamlib opens an IC-7300 with two stop bits, which is what WSJT-X shows in
-   its serial settings. We opened with one, the Web Serial default, and at
-   115200 that mismatch corrupts enough replies that only the occasional one
-   survives the parser — a readout that lags by seconds rather than one that
-   fails outright. Adjustable, because the right answer differs per radio. */
-let rigStopBits = 1;
+/* ─── Serial parameters, per radio ───
+   Every other rig-control program lets the operator set the whole line: rate,
+   data bits, stop bits, parity and handshake. Guessing them one at a time as
+   each radio turns up does not scale, and the defaults that matter are not
+   knowable from here.
 
-function setRigStop(n) {
-  rigStopBits = (Number(n) === 2) ? 2 : 1;
-  try { localStorage.setItem(RIG_STOP_KEY, String(rigStopBits)); } catch (e) {}
-  if (rigConnected) toast('Reconnect the rig for the stop bits to take effect', 'wrn');
+   Stored per RADIO, not per protocol. An IC-7300 and an IC-706 are both CI-V
+   but want different rates, so keying this off the protocol meant setting one
+   clobbered the other. */
+const RIG_STOP_KEY = 'w4ggj_rig_stop';          // pre-parameter setting, migrated
+const rigParamsKey = id => 'w4ggj_rigparams_' + id;
+
+const RIG_PARAM_CHOICES = {
+  baud:   [115200, 57600, 38400, 19200, 9600, 4800, 1200],
+  data:   [8, 7],
+  stop:   [1, 2],
+  parity: ['none', 'even', 'odd'],
+  /* Web Serial offers no XON/XOFF, so it is not listed rather than listed and
+     silently ignored. 'hardware' drives RTS, which is PTT on many radios, so
+     it is confirmed before it is set. */
+  flow:   ['none', 'hardware']
+};
+
+function rigDefaultParams(id) {
+  const m = rigModelById(id) || {};
+  const proto = RIG_TYPES[m.proto] || RIG_TYPES.civ;
+  return {
+    baud:   m.baud   || proto.defBaud,
+    data:   m.data   || 8,
+    stop:   m.stop   || 1,
+    parity: m.parity || 'none',
+    flow:   m.flow   || 'none'
+  };
+}
+
+function rigParams(id) {
+  const out = rigDefaultParams(id);
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(rigParamsKey(id)) || 'null'); } catch (e) {}
+  if (saved && typeof saved === 'object') {
+    for (const k of Object.keys(out)) {
+      const v = k === 'baud' || k === 'data' || k === 'stop' ? Number(saved[k]) : saved[k];
+      if (RIG_PARAM_CHOICES[k].indexOf(v) !== -1) out[k] = v;   // ignore anything unknown
+    }
+  }
+  return out;
+}
+
+function setRigParam(key, value) {
+  if (!RIG_PARAM_CHOICES[key]) return;
+  const v = (key === 'baud' || key === 'data' || key === 'stop') ? Number(value) : value;
+  if (RIG_PARAM_CHOICES[key].indexOf(v) === -1) return;
+  if (key === 'flow' && v === 'hardware' && !confirm(
+      'Use hardware handshake?\n\n' +
+      'Hardware flow control drives the RTS line. On a radio with SEND or PTT ' +
+      'mapped to RTS that will key the transmitter. Rig control almost never ' +
+      'needs it — leave it on None unless you know this radio wants it.')) {
+    paintRigParams();
+    return;
+  }
+  const next = rigParams(rigModel);
+  next[key] = v;
+  try { localStorage.setItem(rigParamsKey(rigModel), JSON.stringify(next)); } catch (e) {}
+  paintRigParams();
+  if (rigConnected) toast('Reconnect the rig for the new serial settings', 'wrn');
+}
+
+/* Settings from before this existed were keyed by protocol. Seed each radio of
+   that protocol that has none of its own, so a working rig keeps working. */
+function migrateRigParams() {
+  for (const m of RIG_MODELS) {
+    if (localStorage.getItem(rigParamsKey(m.id))) continue;
+    let baud = null, stop = null;
+    try {
+      baud = localStorage.getItem('w4ggj_rig_baud_' + m.proto)
+          || (m.proto === 'civ' ? localStorage.getItem('w4ggj_rig_baud') : null);
+      stop = localStorage.getItem(RIG_STOP_KEY);
+    } catch (e) {}
+    if (baud == null && stop == null) continue;
+    const seeded = rigDefaultParams(m.id);
+    if (RIG_PARAM_CHOICES.baud.indexOf(Number(baud)) !== -1) seeded.baud = Number(baud);
+    if (RIG_PARAM_CHOICES.stop.indexOf(Number(stop)) !== -1) seeded.stop = Number(stop);
+    try { localStorage.setItem(rigParamsKey(m.id), JSON.stringify(seeded)); } catch (e) {}
+  }
 }
 
 const RIG_DTR_KEY = 'w4ggj_rig_dtr';
@@ -3612,10 +3715,10 @@ function ch340In(dev, request, value, index, len) {
 const USB_SERIAL_DRIVERS = [
   {
     name: 'CH340/CH341', vid: 0x1a86, pids: [0x7523, 0x5523, 0x7522],
-    async init(dev, baud) {
+    async init(dev, baud, line) {
       const iface = dev.configuration.interfaces[0];
       await dev.claimInterface(iface.interfaceNumber);
-      const lcr = 0x80 | 0x40 | 0x03;                   // RX + TX enabled, 8 data bits
+      const lcr = line.ch341;                           // RX + TX enabled, data/stop/parity
       await ch340In(dev, 0x5f, 0, 0, 2);
       await ch340Out(dev, 0xa1, 0, 0);
       await ch340Baud(dev, baud);
@@ -3631,7 +3734,7 @@ const USB_SERIAL_DRIVERS = [
   },
   {
     name: 'CP210x', vid: 0x10c4, pids: [0xea60, 0xea70, 0xea71],
-    async init(dev, baud) {
+    async init(dev, baud, line) {
       const iface = dev.configuration.interfaces[0];
       const n = iface.interfaceNumber;
       await dev.claimInterface(n);
@@ -3641,13 +3744,13 @@ const USB_SERIAL_DRIVERS = [
       const b = new Uint8Array(4);
       new DataView(b.buffer).setUint32(0, baud, true);
       await out(0x1e, 0x0000, b);                       // SET_BAUDRATE, 32-bit LE
-      await out(0x03, 0x0800);                          // SET_LINE_CTL: 8 data bits, no parity, 1 stop
+      await out(0x03, line.cp210);                      // SET_LINE_CTL: data, parity, stop
       return Object.assign({ iface: n, header: 0 }, usbBulkEndpoints(iface));
     }
   },
   {
     name: 'FTDI', vid: 0x0403, pids: [0x6001, 0x6010, 0x6011, 0x6014, 0x6015],
-    async init(dev, baud) {
+    async init(dev, baud, line) {
       const iface = dev.configuration.interfaces[0];
       await dev.claimInterface(iface.interfaceNumber);
       const port = 1;
@@ -3675,22 +3778,22 @@ const USB_SERIAL_DRIVERS = [
       await out(1, (rigRaiseDtr ? 0x0101 : 0x0100) , port); // MODEM_CTRL: DTR
       await out(1, (USB_RTS ? 0x0202 : 0x0200) , port); // MODEM_CTRL: RTS
       await out(3, value, index);                       // SET_BAUD_RATE
-      await out(4, 0x0008, port);                       // SET_DATA: 8N1
+      await out(4, line.ftdi, port);                    // SET_DATA: data, parity, stop
       // Every bulk IN packet starts with two modem-status bytes
       return Object.assign({ iface: iface.interfaceNumber, header: 2 }, usbBulkEndpoints(iface));
     }
   },
   {
     name: 'PL2303', vid: 0x067b, pids: [0x2303, 0x23a3, 0x23b3, 0x23c3, 0x23d3, 0x23e3, 0x23f3],
-    async init(dev, baud) {
+    async init(dev, baud, line) {
       const iface = dev.configuration.interfaces[0];
       const n = iface.interfaceNumber;
       await dev.claimInterface(n);
-      const line = new Uint8Array(7);
-      new DataView(line.buffer).setUint32(0, baud, true);
-      line[4] = 0; line[5] = 0; line[6] = 8;            // 1 stop bit, no parity, 8 data bits
+      const b2 = new Uint8Array(7);                     // SET_LINE_CODING payload
+      new DataView(b2.buffer).setUint32(0, baud, true);
+      b2[4] = line.cdc.stop; b2[5] = line.cdc.parity; b2[6] = line.cdc.data;
       await dev.controlTransferOut(
-        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: n }, line);
+        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: n }, b2);
       await dev.controlTransferOut(
         { requestType: 'class', recipient: 'interface', request: 0x22,
           value: (rigRaiseDtr ? 1 : 0) | (USB_RTS ? 2 : 0), index: n });
@@ -3701,7 +3804,7 @@ const USB_SERIAL_DRIVERS = [
     /* Plain USB CDC-ACM. Last resort: Android may already have claimed one of
        these with its own driver, in which case claimInterface throws. */
     name: 'CDC-ACM', cdc: true,
-    async init(dev, baud) {
+    async init(dev, baud, line) {
       const ctrl = usbIface(dev, 0x02);
       const data = usbIface(dev, 0x0a) || dev.configuration.interfaces[0];
       const cn = ctrl ? ctrl.interfaceNumber : data.interfaceNumber;
@@ -3709,11 +3812,11 @@ const USB_SERIAL_DRIVERS = [
       if (ctrl && ctrl.interfaceNumber !== data.interfaceNumber) {
         try { await dev.claimInterface(ctrl.interfaceNumber); } catch (e) {}
       }
-      const line = new Uint8Array(7);
-      new DataView(line.buffer).setUint32(0, baud, true);
-      line[4] = 0; line[5] = 0; line[6] = 8;
+      const b2 = new Uint8Array(7);                     // SET_LINE_CODING payload
+      new DataView(b2.buffer).setUint32(0, baud, true);
+      b2[4] = line.cdc.stop; b2[5] = line.cdc.parity; b2[6] = line.cdc.data;
       await dev.controlTransferOut(
-        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: cn }, line);
+        { requestType: 'class', recipient: 'interface', request: 0x20, value: 0, index: cn }, b2);
       await dev.controlTransferOut(
         { requestType: 'class', recipient: 'interface', request: 0x22,
           value: (rigRaiseDtr ? 1 : 0) | (USB_RTS ? 2 : 0), index: cn });
@@ -3736,12 +3839,12 @@ function usbDriverFor(dev) {
 
 /* Opens `dev` and hands back the same little read/write/close shape the Web
    Serial path uses, so everything above the transport stays identical. */
-async function usbOpenLink(dev, baud) {
+async function usbOpenLink(dev, baud, params) {
   await dev.open();
   if (!dev.configuration) await dev.selectConfiguration(1);
   const drv = usbDriverFor(dev);
   if (!drv) throw new Error(`Unsupported cable ${usbHex(dev.vendorId)}:${usbHex(dev.productId)}`);
-  const cfg = await drv.init(dev, baud);
+  const cfg = await drv.init(dev, baud, usbLine(params));
   if (!cfg.epIn || !cfg.epOut) throw new Error(drv.name + ': no bulk endpoints');
 
   let closed = false;
@@ -3821,7 +3924,10 @@ const RIG_TYPES = {
    short honest one. */
 const RIG_MODELS = [
   { id: 'icom-706',    label: 'Icom IC-706MKIIG', proto: 'civ', addr: 0x58, tested: true },
-  { id: 'icom-7300',   label: 'Icom IC-7300',     proto: 'civ', addr: 0x94 },
+  /* The one radio here with evidence behind its line settings: this is what
+     Hamlib opens a 7300 with, as shown in a working WSJT-X setup. */
+  { id: 'icom-7300',   label: 'Icom IC-7300',     proto: 'civ', addr: 0x94,
+    baud: 115200, stop: 2 },
   { id: 'icom-7100',   label: 'Icom IC-7100',     proto: 'civ', addr: 0x88 },
   { id: 'icom-7610',   label: 'Icom IC-7610',     proto: 'civ', addr: 0x98 },
   { id: 'icom-9700',   label: 'Icom IC-9700',     proto: 'civ', addr: 0xA2 },
@@ -3875,17 +3981,38 @@ function paintAutofill() {
 
 /* Baud is remembered per rig type — the two radios don't run at the same rate.
    'w4ggj_rig_baud' is the pre-FT-991A single-rig setting, honoured for Icom. */
-function rigBaudKey(t) { return 'w4ggj_rig_baud_' + t; }
+const RIG_PARAM_LABEL = { baud: '', data: ' data', stop: ' stop', parity: '', flow: '' };
 
-function savedRigBaud(t) {
-  let v = null;
-  try {
-    v = localStorage.getItem(rigBaudKey(t));
-    if (v == null && t === 'civ') v = localStorage.getItem('w4ggj_rig_baud');
-  } catch (e) {}
-  const n = parseInt(v, 10);
-  return RIG_TYPES[t].bauds.indexOf(n) !== -1 ? n : RIG_TYPES[t].defBaud;
+function paintRigParams() {
+  const cur = rigParams(rigModel);
+  for (const key of Object.keys(RIG_PARAM_CHOICES)) {
+    const el = $('rig-' + key);
+    if (!el) continue;
+    el.innerHTML = '';
+    for (const v of RIG_PARAM_CHOICES[key]) {
+      const o = document.createElement('option');
+      o.value = String(v);
+      o.textContent = String(v) + RIG_PARAM_LABEL[key];
+      if (v === cur[key]) o.selected = true;
+      el.appendChild(o);
+    }
+  }
+  const b = $('rig-baud');
+  if (b) b.title = (RIG_TYPES[rigType] || RIG_TYPES.civ).baudTitle;
+  const d = $('rig-defaults');
+  if (d) {
+    const def = rigDefaultParams(rigModel);
+    const same = Object.keys(def).every(k => def[k] === cur[k]);
+    d.style.display = same ? 'none' : '';
+  }
 }
+
+function resetRigParams() {
+  try { localStorage.removeItem(rigParamsKey(rigModel)); } catch (e) {}
+  paintRigParams();
+  if (rigConnected) toast('Reconnect the rig for the new serial settings', 'wrn');
+}
+
 
 function paintRigType() {
   const spec = RIG_TYPES[rigType];
@@ -3897,19 +4024,7 @@ function paintRigType() {
     warn.style.display = (m && m.tested) ? 'none' : '';
   }
 
-  const baud = $('rig-baud');
-  if (baud) {
-    const want = savedRigBaud(rigType);
-    baud.innerHTML = '';
-    for (const b of spec.bauds) {
-      const o = document.createElement('option');
-      o.value = String(b);
-      o.textContent = String(b);
-      if (b === want) o.selected = true;
-      baud.appendChild(o);
-    }
-    baud.title = spec.baudTitle;
-  }
+  paintRigParams();
 
   const addr = $('rig-addr');
   if (addr) addr.style.display = spec.addr ? '' : 'none';   // CI-V address is Icom-only
@@ -3958,7 +4073,8 @@ function setRigModel(id) {
       localStorage.setItem('w4ggj_rig_addr', hex);
       if ($('rig-addr')) $('rig-addr').value = hex;
     }
-    if (m.baud) localStorage.setItem(rigBaudKey(m.proto), String(m.baud));
+    /* Parameters belong to the radio, so nothing is written for the
+       protocol any more; rigParams falls back to this model's defaults. */
   } catch (e) {}
   paintRigType();
 }
@@ -4038,7 +4154,8 @@ async function rigConnect(port, auto) {
   }
   try {
     const spec = RIG_TYPES[rigType];
-    const baud = parseInt($('rig-baud').value, 10) || spec.defBaud;
+    const params = rigParams(rigModel);
+    const baud = params.baud;
     if (spec.addr) {
       rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
       if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
@@ -4047,10 +4164,16 @@ async function rigConnect(port, auto) {
       if (!usbSupported()) throw new Error('This browser has no WebUSB');
       // filters:[] so an unrecognised cable can still be picked and named
       const dev = port || await navigator.usb.requestDevice({ filters: [] });
-      rigLink = await usbOpenLink(dev, baud);
+      rigLink = await usbOpenLink(dev, baud, params);
     } else {
       rigPort = port || await navigator.serial.requestPort();
-      await rigPort.open({ baudRate: baud, stopBits: rigStopBits });
+      await rigPort.open({
+        baudRate:    params.baud,
+        dataBits:    params.data,
+        stopBits:    params.stop,
+        parity:      params.parity,
+        flowControl: params.flow
+      });
       /* Before anything else, and before any data: open() takes no signal
          options and leaves DTR/RTS in a state nobody specifies, so put them
          where we want them explicitly rather than inheriting a default that
@@ -4083,7 +4206,7 @@ async function rigConnect(port, auto) {
     rigConnected = true;
     $('rig-btn').textContent = 'DISCONNECT';
     setRigStatus('ok', `Connected (${rigLink.label}) — reading…`);
-    localStorage.setItem(rigBaudKey(rigType), String(baud));
+    try { localStorage.setItem(rigParamsKey(rigModel), JSON.stringify(params)); } catch (e) {}
     localStorage.setItem(RIG_LINK_KEY, rigLinkKind);
     if (spec.addr) localStorage.setItem('w4ggj_rig_addr', ($('rig-addr').value || '58'));
     rememberRigPort();             // so a refresh can pick this cable back up
@@ -4457,7 +4580,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-09-21';
+const APP_BUILD = '2026-11-09-22';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -4559,8 +4682,7 @@ paintPin();
   /* Opt-in only: an absent setting means down, so an upgrade can never
      inherit a raised line from the build that used to raise one. */
   rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
-  rigStopBits = localStorage.getItem(RIG_STOP_KEY) === '2' ? 2 : 1;
-  if ($('rig-stop')) $('rig-stop').value = String(rigStopBits);
+  migrateRigParams();
   paintRigDtr();
   paintAutofill();
   if (!rigSupported() && !usbSupported()) {

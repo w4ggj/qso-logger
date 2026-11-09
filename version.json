@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-09-21",
-  "notes": "Selectable stop bits, 250 ms CAT polling, and a live frames/bytes readout for diagnosing a slow link"
+  "build": "2026-11-09-22",
+  "notes": "Full serial parameters (baud, data, stop, parity, handshake) stored per radio"
 }
