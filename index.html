@@ -3927,10 +3927,10 @@ const RIG_TYPES = {
    short honest one. */
 const RIG_MODELS = [
   { id: 'icom-706',    label: 'Icom IC-706MKIIG', proto: 'civ', addr: 0x58, tested: true },
-  /* The one radio here with evidence behind its line settings: this is what
-     Hamlib opens a 7300 with, as shown in a working WSJT-X setup. */
+  /* Confirmed on air: 115200, 8N2, CI-V address 94, reading and tracking the
+     dial. These were Hamlib's settings for a 7300 and the radio agrees. */
   { id: 'icom-7300',   label: 'Icom IC-7300',     proto: 'civ', addr: 0x94,
-    baud: 115200, stop: 2 },
+    baud: 115200, stop: 2, tested: true },
   { id: 'icom-7100',   label: 'Icom IC-7100',     proto: 'civ', addr: 0x88 },
   { id: 'icom-7610',   label: 'Icom IC-7610',     proto: 'civ', addr: 0x98 },
   { id: 'icom-9700',   label: 'Icom IC-9700',     proto: 'civ', addr: 0xA2 },
@@ -4628,7 +4628,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-09-23';
+const APP_BUILD = '2026-11-09-24';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
