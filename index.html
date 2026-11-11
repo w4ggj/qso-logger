@@ -1388,6 +1388,10 @@ footer {
               refuses an HTTPS page reaching <code>http://</code> anywhere but localhost.
               A QSO that cannot be sent waits in a queue and goes out when the shim answers &mdash;
               nothing is lost, and logging never blocks.
+              Only QSOs logged <em>on this device</em> are sent automatically. Contacts merged in from
+              a phone or tablet go through <strong>&#8648; SHACK</strong> above the log, which sends
+              everything in the session that has not gone already &mdash; pressing it twice sends
+              nothing twice.
             </div>
           </div>
 
@@ -1600,6 +1604,8 @@ footer {
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search callsign, band, mode, program…" oninput="renderTable()">
       </div>
+      <button class="btn btn-outline" id="send-session-btn" onclick="sendSession()"
+        style="display:none" title="Send every QSO in this session to the shack that has not gone already. Use it after merging a log in from your phone.">⇈ SHACK</button>
       <button class="btn btn-outline" onclick="exportADIF()">⤓ ADIF</button>
       <button class="btn btn-outline" onclick="exportCSV()">⤓ CSV</button>
     </div>
@@ -3618,6 +3624,7 @@ const SEND_URL_KEY  = 'w4ggj_send_url';
 const SEND_PORT_KEY = 'w4ggj_send_port';
 const SEND_FMT_KEY  = 'w4ggj_send_fmt';
 const SEND_Q_KEY    = 'w4ggj_send_queue';
+const SEND_DONE_KEY = 'w4ggj_send_done';
 const SEND_URL_DFLT = 'http://127.0.0.1:2236';
 const SEND_FORMATS  = ['wsjtx', 'adif'];
 
@@ -3626,7 +3633,16 @@ let sendUrl = SEND_URL_DFLT;
 let sendPort = '';              // blank = whatever the shim was started with
 let sendFmt = 'wsjtx';
 let sendQueue = [];             // QSOs not yet acknowledged
+/* What has already gone out, keyed by content rather than by the row's id,
+   so a contact logged on the phone and merged in here is recognised as the
+   same QSO. Pressing SEND SESSION twice, or re-importing the same backup,
+   therefore sends nothing a second time. */
+let sendDone = new Set();
 let sendBusy = false, sendTimer = null, sendFails = 0;
+/* A merged session can be hundreds of contacts. They go out one at a time
+   with a breath between them, so a burst cannot overrun the receiving
+   socket's buffer — nothing on the far side acknowledges anything. */
+const SEND_GAP = 25;
 
 /* ─── The two payloads ───
    WSJT-X's UDP protocol is what most shacks already listen for, so it is
@@ -3684,16 +3700,47 @@ function sendQueueLoad() {
   catch (e) { sendQueue = []; }
 }
 function sendQueueSave() {
-  try { localStorage.setItem(SEND_Q_KEY, JSON.stringify(sendQueue.slice(0, 500))); }
+  try { localStorage.setItem(SEND_Q_KEY, JSON.stringify(sendQueue.slice(0, 2000))); }
+  catch (e) {}
+}
+function sendDoneLoad() {
+  try { sendDone = new Set(JSON.parse(localStorage.getItem(SEND_DONE_KEY) || '[]')); }
+  catch (e) { sendDone = new Set(); }
+}
+function sendDoneSave() {
+  /* Keep the most recent few thousand; older ones cannot be re-sent by
+     accident because they are no longer in any session being looked at. */
+  try { localStorage.setItem(SEND_DONE_KEY, JSON.stringify([...sendDone].slice(-5000))); }
   catch (e) {}
 }
 
+/* Returns false when there was nothing to do, so a caller can count. */
 function sendQso(entry) {
-  if (!sendOn) return;
-  sendQueue.push({ at: Date.now(), entry });
+  if (!sendOn) return false;
+  const key = qsoKey(entry);
+  if (sendDone.has(key)) return false;
+  if (sendQueue.some(j => j.key === key)) return false;
+  sendQueue.push({ at: Date.now(), key, entry });
   sendQueueSave();
   paintSend();
   sendFlush();
+  return true;
+}
+
+/* The explicit one: everything in the session being viewed that has not
+   already gone. This is how contacts logged on a phone reach the shack —
+   they are merged in from a backup, which does not go through the logging
+   path, and then sent from here on purpose rather than automatically. */
+function sendSession() {
+  if (!sendOn) { toast('Turn on Send QSOs to the shack first', 'wrn'); return; }
+  const view = visibleLog();
+  if (!view.length) { toast('Nothing in this session to send', 'wrn'); return; }
+  /* Oldest first, so they arrive in the order they were made. */
+  let queued = 0;
+  [...view].reverse().forEach(e => { if (sendQso(e)) queued++; });
+  const already = view.length - queued;
+  if (!queued) toast(`All ${view.length} already sent`, 'ok');
+  else toast(`Sending ${queued}${already ? `, ${already} already sent` : ''}`, 'ok');
 }
 
 async function sendFlush() {
@@ -3711,9 +3758,12 @@ async function sendFlush() {
       });
       if (!r.ok) throw new Error('shim said ' + r.status);
       sendQueue.shift();
+      if (job.key) sendDone.add(job.key);
       sendQueueSave();
+      sendDoneSave();
       sendFails = 0;
       paintSend();
+      if (sendQueue.length) await new Promise(r2 => setTimeout(r2, SEND_GAP));
     }
     setSendStatus('ok', 'Sent');
   } catch (e) {
@@ -3785,10 +3835,13 @@ function paintSend() {
   if (body) body.style.display = sendOn ? '' : 'none';
   const q = $('send-queue');
   if (q) q.textContent = sendQueue.length ? `${sendQueue.length} waiting to send` : '';
+  const sb = $('send-session-btn');
+  if (sb) sb.style.display = sendOn ? '' : 'none';
 }
 
 function sendInit() {
   sendQueueLoad();
+  sendDoneLoad();
   try {
     sendOn  = localStorage.getItem(SEND_ON_KEY) === '1';
     sendUrl = localStorage.getItem(SEND_URL_KEY) || SEND_URL_DFLT;
@@ -5351,7 +5404,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-29';
+const APP_BUILD = '2026-11-11-30';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

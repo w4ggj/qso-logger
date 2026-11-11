@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-29",
-  "notes": "Send each QSO on as it is logged, through a local UDP shim"
+  "build": "2026-11-11-30",
+  "notes": "Send each QSO on as it is logged, plus a SHACK button for a merged session"
 }

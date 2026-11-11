@@ -496,6 +496,27 @@ configuration sits in Settings, but not a different **host**, since a web page
 that could choose the destination address could use the shim to reach other
 machines on the network.
 
+### Contacts logged somewhere else
+
+Each device keeps its own log — that is the design, not a limitation — so the
+automatic send only covers QSOs logged **on the device running the shim**. A
+phone or tablet cannot run it, and its queue never leaves that phone.
+
+Those contacts reach the shack the way they always have: Export on the phone,
+Import and merge on the PC. A merge does not go through the logging path, so it
+sends nothing by itself. **&#8648; SHACK**, beside the export buttons, sends
+everything in the session being viewed that has not gone already.
+
+What has been sent is remembered by the contact's **content** — callsign, date,
+time, band, mode — not by its row id, which differs between devices. So
+pressing the button twice sends nothing twice, and merging the same backup
+again is recognised rather than duplicated. A send that fails is not marked
+done, and stays queued.
+
+A merged session can be hundreds of contacts, so they go out one at a time with
+a pause between them: nothing on the far side acknowledges anything, and a
+burst can overrun a receiving socket's buffer.
+
 ### Nothing is lost when the shack is unreachable
 
 The log in the browser is the record; this is a copy going somewhere else, so
