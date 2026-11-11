@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-26",
-  "notes": "Set the mode from the logger - LSB, USB, CW, AM, FM, RTTY"
+  "build": "2026-11-11-27",
+  "notes": "Radio mode buttons moved out of Settings, next to Quick Band"
 }

@@ -671,7 +671,7 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 }
 .rig-stats.bad { color: var(--amber); }
 
-.rig-modes { display: flex; gap: 4px; margin-top: 8px; }
+.rig-modes { display: flex; gap: 4px; }
 .mode-btn {
   flex: 1; padding: 7px 2px; cursor: pointer;
   border: 1px solid var(--border2); border-radius: var(--r);
@@ -1149,9 +1149,23 @@ footer {
         </div>
       </div>
 
+      <div class="row1" id="rig-mode-row" style="display:none">
+        <div class="field">
+          <label>Radio Mode <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(sets the rig — not what gets logged)</span></label>
+          <div class="rig-modes" id="rig-modes">
+            <button type="button" class="mode-btn" data-mode="LSB" onclick="rigSetMode('LSB')">LSB</button>
+            <button type="button" class="mode-btn" data-mode="USB" onclick="rigSetMode('USB')">USB</button>
+            <button type="button" class="mode-btn" data-mode="CW" onclick="rigSetMode('CW')">CW</button>
+            <button type="button" class="mode-btn" data-mode="AM" onclick="rigSetMode('AM')">AM</button>
+            <button type="button" class="mode-btn" data-mode="FM" onclick="rigSetMode('FM')">FM</button>
+            <button type="button" class="mode-btn" data-mode="RTTY" onclick="rigSetMode('RTTY')">RTTY</button>
+          </div>
+        </div>
+      </div>
+
       <div class="row1">
         <div class="field">
-          <label>Mode</label>
+          <label>Mode <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(what goes in the log)</span></label>
           <select id="inp-mode">
             <option value="">— Mode —</option>
             <option>SSB</option><option>CW</option><option>FM</option>
@@ -1363,15 +1377,6 @@ footer {
             <select id="rig-flow"   onchange="setRigParam('flow', this.value)"
               title="Handshake. Hardware drives RTS, which is PTT on many radios."></select>
           </div>
-          <div id="rig-modes" class="rig-modes" style="display:none">
-            <button class="mode-btn" data-mode="LSB" onclick="rigSetMode('LSB')">LSB</button>
-            <button class="mode-btn" data-mode="USB" onclick="rigSetMode('USB')">USB</button>
-            <button class="mode-btn" data-mode="CW" onclick="rigSetMode('CW')">CW</button>
-            <button class="mode-btn" data-mode="AM" onclick="rigSetMode('AM')">AM</button>
-            <button class="mode-btn" data-mode="FM" onclick="rigSetMode('FM')">FM</button>
-            <button class="mode-btn" data-mode="RTTY" onclick="rigSetMode('RTTY')">RTTY</button>
-          </div>
-
           <div id="ptt-wrap" style="display:none;margin-top:10px;">
             <div id="ptt-btn" class="ptt-btn" role="button" tabindex="0"
                  onpointerdown="pttButtonDown(event)"
@@ -4894,9 +4899,12 @@ function rigSetMode(label) {
 
 function paintRigModes() {
   const wrap = $('rig-modes');
-  if (!wrap) return;
-  wrap.style.display = rigCanSetMode() ? '' : 'none';
-  if (!rigCanSetMode()) return;
+  const row  = $('rig-mode-row');
+  const on   = rigCanSetMode();
+  /* The whole row goes, label and all: an operator with no CAT cable should
+     not be looking at a dead control in the middle of the entry form. */
+  if (row) row.style.display = on ? '' : 'none';
+  if (!wrap || !on) return;
   const d = RIG_TYPES[rigType];
   [...wrap.children].forEach(b => {
     const on = rigModeCode !== null && d.modes[b.dataset.mode] === rigModeCode;
@@ -4974,7 +4982,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-26';
+const APP_BUILD = '2026-11-11-27';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
