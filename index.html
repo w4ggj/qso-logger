@@ -671,7 +671,11 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 }
 .rig-stats.bad { color: var(--amber); }
 
-.rig-modes { display: flex; gap: 4px; }
+/* Four across on a phone, which puts the four sidebands on the first row and
+   the rest on the second; one row of eight once there is width for it. A grid
+   rather than wrapping flex, so a short last row does not stretch to fill. */
+.rig-modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+@media (min-width: 1024px) { .rig-modes { grid-template-columns: repeat(8, 1fr); } }
 .mode-btn {
   flex: 1; padding: 7px 2px; cursor: pointer;
   border: 1px solid var(--border2); border-radius: var(--r);
@@ -1155,6 +1159,8 @@ footer {
           <div class="rig-modes" id="rig-modes">
             <button type="button" class="mode-btn" data-mode="LSB" onclick="rigSetMode('LSB')">LSB</button>
             <button type="button" class="mode-btn" data-mode="USB" onclick="rigSetMode('USB')">USB</button>
+            <button type="button" class="mode-btn" data-mode="LSB-D" onclick="rigSetMode('LSB-D')">LSB-D</button>
+            <button type="button" class="mode-btn" data-mode="USB-D" onclick="rigSetMode('USB-D')">USB-D</button>
             <button type="button" class="mode-btn" data-mode="CW" onclick="rigSetMode('CW')">CW</button>
             <button type="button" class="mode-btn" data-mode="AM" onclick="rigSetMode('AM')">AM</button>
             <button type="button" class="mode-btn" data-mode="FM" onclick="rigSetMode('FM')">FM</button>
@@ -4158,18 +4164,38 @@ const RIG_TYPES = {
     bauds: [115200, 57600, 38400, 19200, 9600, 4800, 1200], defBaud: 19200, addr: true,
     baudTitle: 'CI-V baud — must match SET → Connectors → CI-V → CI-V Baud Rate on the radio',
     poll()     { civSend(0x03); },
-    pollMode() { civSend(0x04); },
-    /* Command 06 takes the mode and an OPTIONAL filter byte. Leaving the
-       filter off does not keep the current one: the radio picks the default
-       filter for the mode being selected, so an operator running FIL2 on USB
-       would land on FIL1 after a sideband change. The 04 reply carries the
-       filter in its second byte, so hand back whatever was last reported and
-       the filter survives. Radios that report no filter byte are sent none,
-       which is also the form the older sets accept. */
-    setMode(code) {
-      civSend(0x06, rigCivFilter == null ? [code] : [code, rigCivFilter]);
+    /* Two ways to read the mode, and the difference is DATA.
+         04        → mode + filter. Says nothing about the DATA flag.
+         26 00     → VFO + mode + DATA + filter, all four, read and write.
+       Command 06 sets the mode but leaves the DATA flag alone, so on a radio
+       in USB-D a tap on LSB would give LSB-D with nothing in the readout
+       saying so. Where 26 is available it is the only one used. Whether a
+       radio has it is discovered by asking, not by a table of models: see
+       civProbe26. */
+    pollMode() { if (civUse26 === false) civSend(0x04); else civSend(0x26, [0x00]); },
+    /* The filter byte is not optional in practice. Omitting it does not keep
+       the current filter — the radio selects the default for the mode being
+       set, so an operator on FIL2 would land on FIL1 after a sideband change.
+       Both replies carry the filter, so hand back whatever was last reported.
+       A radio reporting no filter is sent none, the form the older sets take. */
+    setMode(m) {
+      const fil = rigCivFilter == null ? 0x01 : rigCivFilter;
+      if (civUse26 === true) civSend(0x26, [0x00, m.code, m.data ? 0x01 : 0x00, fil]);
+      else civSend(0x06, rigCivFilter == null ? [m.code] : [m.code, rigCivFilter]);
     },
-    modes: { LSB: 0x00, USB: 0x01, CW: 0x03, AM: 0x02, FM: 0x05, RTTY: 0x04 },
+    /* The key a mode is recognised by: the code alone is not enough once DATA
+       is in play, since USB and USB-D share code 0x01. */
+    keyOf: m => m.code + ':' + (m.data ? 1 : 0),
+    /* DATA needs command 26. Until the radio has answered one, the two DATA
+       buttons stay hidden rather than offering something that would silently
+       set plain USB. */
+    has: m => !m.data || civUse26 === true,
+    modes: {
+      LSB:  { code: 0x00 }, USB:  { code: 0x01 }, CW:   { code: 0x03 },
+      AM:   { code: 0x02 }, FM:   { code: 0x05 }, RTTY: { code: 0x04 },
+      'LSB-D': { code: 0x00, data: 1 },
+      'USB-D': { code: 0x01, data: 1 }
+    },
     tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
     /* FE FE <addr> E0 1C 00 01 FD to key, ...00 FD to unkey. */
     tx(on)   { return civSend(0x1C, [0x00, on ? 0x01 : 0x00], true); },
@@ -4183,9 +4209,16 @@ const RIG_TYPES = {
     /* MD0 on Yaesu: the 0 selects the VFO. Kenwood has no such digit. */
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD0;'); },
-    setMode(code) { catSend('MD0' + code + ';'); },
-    /* CW is CW-U and RTTY is RTTY-L: the usual side for each. */
-    modes: { LSB: '1', USB: '2', CW: '3', AM: '5', FM: '4', RTTY: '6' },
+    setMode(m) { catSend('MD0' + m.code + ';'); },
+    keyOf: m => m.code,
+    /* CW is CW-U and RTTY is RTTY-L: the usual side for each. DATA-L and
+       DATA-U are modes in their own right here, not a flag on another mode. */
+    modes: {
+      LSB:  { code: '1' }, USB:  { code: '2' }, CW:   { code: '3' },
+      AM:   { code: '5' }, FM:   { code: '4' }, RTTY: { code: '6' },
+      'LSB-D': { code: '8' },
+      'USB-D': { code: 'C' }
+    },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';'); },
     tx(on)   { return catSend(on ? 'TX1;' : 'TX0;', true); },
     parse()  { catParse(yaesuHandleMsg); }
@@ -4199,8 +4232,15 @@ const RIG_TYPES = {
        differences are exactly why this is its own driver. */
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD;'); },
-    setMode(code) { catSend('MD' + code + ';'); },
-    modes: { LSB: '1', USB: '2', CW: '3', AM: '5', FM: '4', RTTY: '6' },
+    setMode(m) { catSend('MD' + m.code + ';'); },
+    keyOf: m => m.code,
+    /* No DATA buttons: across Kenwood and Elecraft there is no one command
+       for it — the K3 has DT, the TS-590 has its own menu-backed setting — and
+       an untested guess here would set the wrong thing on somebody's radio. */
+    modes: {
+      LSB:  { code: '1' }, USB:  { code: '2' }, CW:   { code: '3' },
+      AM:   { code: '5' }, FM:   { code: '4' }, RTTY: { code: '6' }
+    },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(11, '0') + ';'); },
     tx(on)   { return catSend(on ? 'TX;' : 'RX;', true); },
     parse()  { catParse(kenwoodHandleMsg); }
@@ -4258,6 +4298,14 @@ let rigModeLabel = '', rigLastHz = 0;
 let rigModeCode = null;
 /* CI-V only: the filter byte from the last mode reply. See setMode above. */
 let rigCivFilter = null;
+/* Whether this radio answers command 26. null until it has been asked. */
+let civUse26 = null;
+/* The DATA flag the radio last reported. Only command 26 can see it. */
+let civData = false;
+let civProbeTimer = null;
+/* What the radio last reported, in the driver's own key space, so a mode
+   button can light only when the radio really is on that mode. */
+let rigModeKey = null;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
 
 function toggleAutofill() {
@@ -4529,6 +4577,7 @@ async function rigConnect(port, auto) {
     rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
     paintPtt();
     paintRigModes();
+    if (rigType === 'civ') civProbe26();
     clearInterval(rigStatsTimer);
     rigStatsTimer = setInterval(paintRigStats, 1000);
     if (!rigConnect._wired) {
@@ -4620,7 +4669,8 @@ async function rigDisconnect(silent, why) {
   rigLink = null;
   rigPort = rigReader = rigWriter = null;
   rigConnected = false; rigBuf = []; rigModeLabel = ''; rigLastHz = 0;
-  rigModeCode = null; rigCivFilter = null;
+  rigModeCode = null; rigCivFilter = null; rigModeKey = null;
+  civUse26 = null; civData = false; clearTimeout(civProbeTimer);
   const btn = $('rig-btn'); if (btn) btn.textContent = 'CONNECT RIG';
   setRigStatus('off', why || 'Not connected');
   if (!silent) toast(why || 'Rig disconnected');
@@ -4750,6 +4800,31 @@ function yaesuHandleMsg(msg) {
   }
 }
 
+/* Ask once whether this radio speaks command 26. A radio that has it answers
+   with a 26 frame; one that does not answers NG (FA) or says nothing at all,
+   so silence is also an answer — after the deadline, fall back to 04/06. */
+function civProbe26() {
+  civUse26 = null;
+  clearTimeout(civProbeTimer);
+  civSend(0x26, [0x00]);
+  /* Ask over 04 as well, so a radio without 26 shows its mode straight away
+     instead of staying blank until the probe gives up. A 26 answer carries
+     more (the DATA flag) and lands second, so it wins where there is one. */
+  civSend(0x04);
+  civProbeTimer = setTimeout(() => {
+    if (civUse26 === null) civNo26();
+  }, 2500);
+}
+
+/* No command 26 on this radio: hide the DATA buttons and ask over 04 now,
+   rather than leaving the readout blank until the next mode interval. */
+function civNo26() {
+  civUse26 = false;
+  clearTimeout(civProbeTimer);
+  paintRigModes();
+  if (rigConnected) { civSend(0x04); rigModeDue = Date.now() + RIG_MODE_GAP; }
+}
+
 function civHandleFrame(f) {
   // FE FE <to> <from> <cmd> [data…] FD
   if (f.length < 6) return;
@@ -4762,7 +4837,18 @@ function civHandleFrame(f) {
     if (hz) rigSetFreq(hz);
   } else if (cmd === 0x04 || cmd === 0x01) { // mode read reply, or transceive broadcast
     if (data.length >= 2) rigCivFilter = data[1];
-    if (data.length >= 1) civSetMode(data[0]);
+    /* 04 cannot see the DATA flag. Where 26 is in use its answer is the
+       authority, so do not let 04 overwrite a known DATA state with "off". */
+    if (data.length >= 1) civSetMode(data[0], civUse26 === true ? null : 0);
+  } else if (cmd === 0x26) {              // VFO + mode + DATA + filter
+    civUse26 = true;
+    clearTimeout(civProbeTimer);
+    if (data.length >= 4) {
+      rigCivFilter = data[3];
+      civSetMode(data[1], data[2]);
+    }
+  } else if (cmd === 0xFA) {               // NG: the radio refused the command
+    if (civUse26 === null) civNo26();
   }
 }
 
@@ -4813,7 +4899,10 @@ const YAESU_MODE_LABEL = {
 };
 const YAESU_MODE_APP = {
   '1':'SSB', '2':'SSB', '3':'CW', '4':'FM', '5':'AM',
-  '6':'RTTY', '7':'CW', '9':'RTTY', 'B':'FM', 'D':'AM'
+  '6':'RTTY', '7':'CW', '9':'RTTY', 'B':'FM', 'D':'AM',
+  /* Known to be a data mode, but not which one: clear the field rather than
+     leave the last voice mode sitting there to be logged by mistake. */
+  '8':'', 'A':'', 'C':''
 };
 
 function paintRigReadout() {
@@ -4833,11 +4922,17 @@ function rigSetFreq(hz) {
   }
 }
 
-function civSetMode(code) {
+/* dataFlag: 0/1 from a 26 reply, or null when the source could not see it. */
+function civSetMode(code, dataFlag) {
   rigModeCode = code;
-  rigModeLabel = CIV_MODE_LABEL[code] || '';
+  const on = dataFlag === null ? civData : !!dataFlag;
+  civData = on;
+  const base = CIV_MODE_LABEL[code] || '';
+  rigModeLabel = base + (on && base ? '-D' : '');
   paintRigReadout();
-  applyRigMode(CIV_MODE_APP[code]);
+  /* A DATA mode is not SSB. Which digital mode it is — FT8, FT4, JS8, PSK31 —
+     only the operator knows, so clear the field and let them say. */
+  if (rigModeChanged(code + ':' + (on ? 1 : 0))) applyRigMode(on ? '' : CIV_MODE_APP[code]);
 }
 
 /* Kenwood/Elecraft: 'FA00014250000' — 11 digits, against Yaesu's 9. CW-R and
@@ -4865,20 +4960,20 @@ function kenwoodSetMode(code) {
   rigModeCode = code;
   rigModeLabel = KENWOOD_MODE_LABEL[code] || '';
   paintRigReadout();
-  applyRigMode(KENWOOD_MODE_APP[code]);
+  if (rigModeChanged(code)) applyRigMode(KENWOOD_MODE_APP[code]);
 }
 
 function yaesuSetMode(code) {
   rigModeCode = code;
   rigModeLabel = YAESU_MODE_LABEL[code] || '';
   paintRigReadout();
-  applyRigMode(YAESU_MODE_APP[code]);
+  if (rigModeChanged(code)) applyRigMode(YAESU_MODE_APP[code]);
 }
 
 /* The modes offered as buttons: the ones all three families agree on. A radio
    sitting on something else (DATA-U, CW-R, C4FM) still reads back correctly —
    no button lights, and nothing is changed until one is pressed. */
-const RIG_MODES = ['LSB', 'USB', 'CW', 'AM', 'FM', 'RTTY'];
+const RIG_MODES = ['LSB', 'USB', 'LSB-D', 'USB-D', 'CW', 'AM', 'FM', 'RTTY'];
 
 function rigCanSetMode() {
   const d = RIG_TYPES[rigType];
@@ -4888,9 +4983,9 @@ function rigCanSetMode() {
 function rigSetMode(label) {
   if (!rigCanSetMode()) return;
   const d = RIG_TYPES[rigType];
-  const code = d.modes[label];
-  if (code === undefined) return;
-  d.setMode(code);
+  const m = d.modes[label];
+  if (!m || (d.has && !d.has(m))) return;
+  d.setMode(m);
   /* Show what the radio says, not what we asked for: ask again now rather
      than waiting out the 2 s mode interval, and let the reply paint it. */
   rigModeDue = 0;
@@ -4907,15 +5002,34 @@ function paintRigModes() {
   if (!wrap || !on) return;
   const d = RIG_TYPES[rigType];
   [...wrap.children].forEach(b => {
-    const on = rigModeCode !== null && d.modes[b.dataset.mode] === rigModeCode;
-    b.classList.toggle('on', on);
+    const m = d.modes[b.dataset.mode];
+    /* A button for a mode this radio has no command for is not shown at all,
+       rather than shown and quietly doing the wrong thing. */
+    const avail = !!m && (!d.has || d.has(m));
+    b.style.display = avail ? '' : 'none';
+    b.classList.toggle('on', avail && rigModeKey !== null && d.keyOf(m) === rigModeKey);
   });
 }
 
+/* True when the radio has moved to a different mode since the last reply.
+   The mode is read every couple of seconds, and acting on every reply would
+   overwrite a Mode the operator had just picked by hand. Only a real change
+   on the radio should touch the field. */
+function rigModeChanged(key) {
+  if (key === rigModeKey) return false;
+  rigModeKey = key;
+  return true;
+}
+
+/* '' means the radio is in a DATA mode: clear the field so the operator
+   chooses the digital mode. undefined means we do not recognise the mode at
+   all, and guessing would be worse than leaving it be. */
 function applyRigMode(appMode) {
-  if (!appMode || !rigAutofill) return;
+  if (appMode === undefined || !rigAutofill) return;
   const sel = $('inp-mode');
-  if (sel && [...sel.options].some(o => o.value === appMode)) sel.value = appMode;
+  if (!sel) return;
+  if (appMode === '') { sel.value = ''; return; }
+  if ([...sel.options].some(o => o.value === appMode)) sel.value = appMode;
 }
 
 function toggleAccordion(id) {
@@ -4982,7 +5096,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-27';
+const APP_BUILD = '2026-11-11-28';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

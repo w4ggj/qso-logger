@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-27",
-  "notes": "Radio mode buttons moved out of Settings, next to Quick Band"
+  "build": "2026-11-11-28",
+  "notes": "LSB-D and USB-D buttons; Icom mode now goes over command 26 so DATA is read and set"
 }

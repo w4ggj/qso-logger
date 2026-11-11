@@ -233,36 +233,63 @@ Adding another radio means one entry in `RIG_TYPES` — everything else
 
 ### Setting the mode
 
-Six buttons sit in the entry form directly under Quick Band, and appear once a
-radio is connected. That is where they belong: changing band and changing
-sideband are the same move, and neither should need a trip into Settings. They
-send the mode and then ask the radio what it is on, so the readout and the lit
-button show the radio's answer rather than what was requested.
+Eight buttons sit in the entry form directly under Quick Band, and appear once
+a radio is connected — four sidebands on the first row, CW/AM/FM/RTTY on the
+second. That is where they belong: changing band and changing sideband are the
+same move, and neither should need a trip into Settings. They send the mode and
+then ask the radio what it is on, so the readout and the lit button show the
+radio's answer rather than what was requested.
 
 Two things called Mode sit next to each other, so both say which they are:
-**Radio Mode** sets the rig, **Mode** is what goes in the log. With autofill on
-the second follows the first (LSB and USB both log as SSB), but they are not
-the same field — a DATA mode on the radio can be logged as FT8, FT4, JS8 or
-PSK31, and only the operator knows which.
+**Radio Mode** sets the rig, **Mode** is what goes in the log.
 
-| Driver | Command |
-|---|---|
-| **Icom CI-V** | `06 <mode> [filter]` |
-| **Yaesu CAT** | `MD0<n>;` |
-| **Kenwood / Elecraft** | `MD<n>;` |
+| Driver | Read | Set |
+|---|---|---|
+| **Icom CI-V**, with command 26 | `26 00` | `26 00 <mode> <data> <filter>` |
+| **Icom CI-V**, without | `04` | `06 <mode> [filter]` |
+| **Yaesu CAT** | `MD0;` | `MD0<n>;` |
+| **Kenwood / Elecraft** | `MD;` | `MD<n>;` |
 
-**The filter byte matters.** Icom's command 06 takes an optional filter byte,
-and leaving it off does *not* keep the filter you are on: the radio selects
-the **default filter for the mode being set**. An operator running FIL2 on USB
-would land on FIL1 after a sideband change. The 04 mode reply carries the
-filter in its second byte, so the app keeps whatever the radio last reported
-and hands it back with the mode — the filter survives the change. A radio that
-reports no filter byte is sent none, which is also the form the older sets
-accept, so this needs no per-model table.
+**On an Icom, DATA is a flag, not a mode.** USB-D is mode USB with the DATA
+flag set, and **command 06 does not touch that flag**: a radio in USB-D told to
+go to LSB lands on LSB-D, and command 04 cannot even report it, so nothing in
+the readout would say so. [Command 26][civ26] carries VFO, mode, DATA and
+filter together, in both directions, and is the only one used where the radio
+has it.
 
-Only the six modes all three families agree on are offered. A radio sitting on
-something else — DATA-U, CW-R, C4FM — reads back correctly in the readout and
-lights no button, rather than lighting an approximate one.
+Whether a radio has command 26 is settled by asking it, not by a table of
+models. On connect the app sends one `26 00` alongside the usual `04`. A radio
+that has it answers with a 26 frame; one that does not answers `FA` (NG) or
+says nothing, and silence past a deadline counts as "no". Without it, the DATA
+buttons are **hidden** rather than shown and quietly setting plain USB.
+
+**The filter byte matters** either way. Omitting it does *not* keep the filter
+you are on: the radio selects the **default filter for the mode being set**, so
+an operator running FIL2 on USB would land on FIL1 after a sideband change.
+Both replies carry the filter, so the app keeps what the radio last reported
+and hands it back. A radio reporting no filter byte is sent none — the form the
+older sets take — so this needs no per-model table either.
+
+Yaesu has no flag: DATA-L and DATA-U are modes `8` and `C`, so they are two
+more entries. Kenwood and Elecraft get **no DATA buttons** — there is no one
+command for it across that family (the K3 has `DT`, the TS-590 its own
+menu-backed setting), and an untested guess would set the wrong thing on
+somebody's radio.
+
+A radio sitting on a mode with no button — CW-R, C4FM — reads back correctly in
+the readout and lights nothing, rather than lighting an approximate one.
+
+[civ26]: https://www.manualslib.com/manual/1106166/Icom-Ic-7300.html?page=162
+
+### The log's Mode field follows changes, not polls
+
+The mode is read every couple of seconds. Acting on every reply would overwrite
+a Mode the operator had just picked by hand, so only a real change on the radio
+touches the field.
+
+A DATA mode **clears** it rather than leaving the last voice mode in place:
+USB-D could be FT8, FT4, JS8 or PSK31, and an empty field asks the question
+where a stale `SSB` would quietly log the wrong thing.
 
 ### PTT
 
