@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-30",
-  "notes": "Send each QSO on as it is logged, plus a SHACK button for a merged session"
+  "build": "2026-11-11-31",
+  "notes": "Double-clickable launcher for the shack bridge"
 }
