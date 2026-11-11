@@ -51,6 +51,13 @@ student was on the mic.
 - **Band quick-jump** — one tap per band. Each band remembers the last frequency
   you were on, so hopping away and back returns you to your own frequency
   instead of a canned one; connected rigs retune to it.
+- **Send each QSO on as you log it** — off by default. With it on, every
+  logged contact goes out as a WSJT-X UDP "Logged ADIF" message (or raw ADIF)
+  to whatever is listening — your own bridge, N1MM, Log4OM, JTAlert — so you
+  stop exporting an `.adi` and importing it by hand. A contact that cannot be
+  sent waits in a queue that survives a refresh; logging never blocks on it.
+  Needs a small shim on the same machine, because **a browser cannot send UDP**
+  — see below.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
 - **Backup & restore** — your log lives only in the browser you made it in, so
@@ -440,6 +447,63 @@ Everything else is built from the published protocol and is labelled
 works — or doesn't — say so and the label comes off. Adding a family means
 adding one row to `RIG_TYPES` with its `poll`, `tune`, `parse` and `tx`;
 nothing else in the rig layer changes.
+
+## Sending each QSO on as it is logged
+
+Turn on **Send QSOs to the shack** in Settings and every logged contact is
+pushed to a UDP listener as it is saved, in the format your station already
+understands.
+
+| Format | What goes on the wire |
+|---|---|
+| **WSJT-X UDP** (default) | message type 12, "Logged ADIF" — magic `ADBCCBDA`, schema 2, then the program id and the ADIF document, each a 32-bit big-endian byte count followed by UTF-8 |
+| **Raw ADIF** | the ADIF document as plain text, nothing wrapped around it |
+
+### A browser cannot send UDP
+
+There is no API for it. WebRTC is the nearest thing and it needs a peer that
+speaks ICE and DTLS, not a socket listening on a port. No permission, flag or
+network setup changes this, so a logger in a browser cannot reach a UDP port
+on its own.
+
+`tools/qso-udp-shim.js` turns an HTTP POST into that datagram and does nothing
+else — the request body becomes the packet, byte for byte:
+
+```
+browser  --HTTP POST-->  shim  --UDP-->  your bridge / N1MM / Log4OM / JTAlert
+```
+
+It has no dependencies and needs Node 18 or newer:
+
+```
+node tools/qso-udp-shim.js                               # listens 2236, sends to 127.0.0.1:2235
+node tools/qso-udp-shim.js --listen 2236 --port 2235     # or say so
+```
+
+Then put `http://127.0.0.1:2236` in the logger's Settings, with the UDP port
+beside it.
+
+**The shim has to run on the same machine as the browser.** The logger is
+served over HTTPS, and a browser refuses an HTTPS page reaching `http://`
+anywhere but localhost — mixed content. A shim on another PC on the LAN is
+blocked before the request is ever sent. That is a rule of the web, not a
+setting in either program.
+
+Because the format lives in the app, where the tests are, the shim should
+never need changing when a format does. It will not send anywhere but the
+address it was started with: the page may name a different **port**, so all the
+configuration sits in Settings, but not a different **host**, since a web page
+that could choose the destination address could use the shim to reach other
+machines on the network.
+
+### Nothing is lost when the shack is unreachable
+
+The log in the browser is the record; this is a copy going somewhere else, so
+it is never allowed to block or fail a QSO. A send that does not land puts the
+contact in a queue which is written to storage, so it survives a refresh or a
+closed laptop, and retries with a backoff of 2s, 4s, 8s up to a minute. The
+panel shows how many are waiting. When the shim answers again they go out
+oldest first.
 
 ## On-screen keyboards
 
