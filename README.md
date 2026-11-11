@@ -25,8 +25,9 @@ student was on the mic.
   cancel.
 - **Live CAT tracking** — reads frequency, mode, and band straight from the
   radio over the CAT cable using the browser's Web Serial API (Chrome/Edge
-  desktop). No extra software. Two radios are supported, picked in Settings:
-  **Icom IC-706MKIIG** (CI-V) and **Yaesu FT-991A** (Yaesu CAT). The connection
+  desktop). No extra software. Pick the model in Settings: nineteen are listed
+  across three protocol drivers — Icom CI-V, Yaesu CAT, and Kenwood/Elecraft —
+  each with its own baud, data, stop, parity and handshake. The connection
   is picked back up automatically after a page refresh — the browser remembers
   the port, so no second trip through the port picker.
 - **Wheel tuning** — click the Frequency field, then scroll (or press `↑`/`↓`)
@@ -34,6 +35,11 @@ student was on the mic.
   each step is sent to the radio, so the wheel is the VFO knob. Steps snap onto
   the step grid, so the first click from an off-grid frequency lands on a round
   number rather than carrying the odd digits along.
+- **PTT over the CAT cable** — key the radio from the logger, with the
+  transmit command sent down the same port the frequency comes up. Hold-to-talk
+  or toggle, on a button or on a key you assign (a function key keeps both hands
+  free for typing). `Escape` always unkeys, and so does losing focus, hiding the
+  tab, closing the page, disconnecting the rig or running past the time limit.
 - **Frequency to 1 Hz** — the field carries all six decimal places, so a radio
   sitting on 14.211650 logs and exports as 14.211650 rather than rounded to the
   nearest 100 Hz.
@@ -215,9 +221,56 @@ entry in the log's Mode list. Those appear in the readout but do not touch the
 Mode field: picking FT8 over PSK31 over JS8 from "DATA-U" would be a guess, and
 a wrong guess gets logged silently.
 
-Adding another radio means one entry in `RIG_TYPES` plus a branch in each of
-`rigPoll`, `rigTuneSend` and `rigParse` — everything else (connect, reconnect,
-polling, wheel tuning, band memory, autofill) is shared.
+Adding another radio means one entry in `RIG_TYPES` — everything else
+(connect, reconnect, polling, wheel tuning, band memory, autofill) is shared.
+
+---
+
+### PTT
+
+The logger can key the radio over the port it is already using for CAT, which
+is useful when the radio is being reached through a remote-control program and
+a virtual serial pair: those programs commonly need window focus to key, and
+you cannot both hold their PTT and type a callsign here.
+
+| Driver | Key | Unkey |
+|---|---|---|
+| **Icom CI-V** | `FE FE <addr> E0 1C 00 01 FD` | `FE FE <addr> E0 1C 00 00 FD` |
+| **Yaesu CAT** | `TX1;` | `TX0;` |
+| **Kenwood / Elecraft** | `TX;` | `RX;` |
+
+The control appears in the rig panel once a radio is connected, and offers:
+
+- **Hold** — transmit for as long as the button or key is held — or **Toggle**,
+  one press on and one press off.
+- A **key you assign**. Press the button, then press the key. A function key is
+  the one to pick: it keys without typing anything. Whatever is assigned is
+  swallowed while it is held, so a printable key does not also land in the
+  field you are typing in. Modifiers count — `Ctrl+F9` does not fire on a bare
+  `F9`.
+- A **time limit** (30 s to 10 minutes). A transmit that runs past it is cut
+  off. This is the dead-man switch for a key that sticks or a browser that
+  stops delivering `keyup`.
+
+Everything that can take your attention away from the page unkeys first:
+losing window focus, hiding the tab, navigating away, closing it, or
+disconnecting the rig. **`Escape` always unkeys**, whatever is assigned and
+whatever has focus.
+
+A key command the port refuses is not treated as a transmit: the indicator
+goes back to receive rather than showing a transmitting radio that is
+listening. A failed *unkey* is the dangerous direction, so it says so loudly
+instead of quietly logging — at that point only the radio's own front panel
+will stop it.
+
+The transmit command is the one write in the app whose failure is reported
+rather than swallowed, and the test suite asserts the inverse too: connecting,
+polling and tuning never produce a transmit frame at any baud. Only a
+deliberate PTT action does.
+
+**Transmit is tested on the IC-7300.** The Yaesu and Kenwood commands come from
+the published protocol and have not been run against a radio; the panel says
+so. Key into a dummy load and confirm it **unkeys** before using either on air.
 
 ---
 
@@ -226,10 +279,13 @@ polling, wheel tuning, band memory, autofill) is shared.
 
 The app holds **both DTR and RTS down** and never raises either. On most
 modern radios one of those lines can be mapped to SEND/PTT — that is how some
-programs key the rig — so raising one transmits. This app never transmits, so
-it has no reason to raise them. Earlier builds raised DTR for cables that take
-their power from a handshake line; that is now an **opt-in toggle, off by
-default**, and turning it on warns you first.
+programs key the rig — so raising one transmits. The logger keys over the CAT
+command instead (see **PTT** below), so it has no reason to raise a handshake
+line and never does: a line that goes up by accident keys a radio with no
+software state saying it is transmitting, and nothing is then watching to put
+it back down. Earlier builds raised DTR for cables that take their power from a
+handshake line; that is now an **opt-in toggle, off by default**, and turning it
+on warns you first.
 
 One limit is the browser's: Web Serial takes no signal options when opening a
 port, and what it leaves the lines at beforehand is undocumented — not in the
@@ -317,8 +373,8 @@ frequency.
 Everything else is built from the published protocol and is labelled
 `(untested)` in the picker, with a note in the panel. If you try one and it
 works — or doesn't — say so and the label comes off. Adding a family means
-adding one row to `RIG_TYPES` with its `poll`, `tune` and `parse`; nothing
-else in the rig layer changes.
+adding one row to `RIG_TYPES` with its `poll`, `tune`, `parse` and `tx`;
+nothing else in the rig layer changes.
 
 ## On-screen keyboards
 
