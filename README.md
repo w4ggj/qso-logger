@@ -456,8 +456,22 @@ understands.
 
 | Format | What goes on the wire |
 |---|---|
-| **WSJT-X UDP** (default) | message type 12, "Logged ADIF" — magic `ADBCCBDA`, schema 2, then the program id and the ADIF document, each a 32-bit big-endian byte count followed by UTF-8 |
+| **WSJT-X UDP** (default) | **two** packets, as WSJT-X itself sends when you log a QSO: type 5 "QSO Logged" with the fields laid out one after another, then type 12 "Logged ADIF" carrying the record as text. Magic `ADBCCBDA`, schema 3, id `WSJT-X` |
 | **Raw ADIF** | the ADIF document as plain text, nothing wrapped around it |
+
+**Both WSJT-X packets go out, not one.** A receiver may act on either, and
+sending only one means a receiver that reads the other sees nothing — while the
+packet still arrives, so nothing reports the miss. The type 5 is also the one
+a forwarder recognises as a logged contact rather than a decode, so sending it
+is what produces the "QSO logged" line in a relay's own window.
+
+The id field says `WSJT-X` rather than this app's name because receivers key on
+it: a logger announcing itself as something else gets filtered out by a shack
+set up for WSJT-X.
+
+The type 5 layout is asserted **byte for byte** against a Python reference, so
+a field in the wrong order or a string counted in characters rather than bytes
+cannot pass as close enough.
 
 ### A browser cannot send UDP
 

@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-31",
-  "notes": "Double-clickable launcher for the shack bridge"
+  "build": "2026-11-11-32",
+  "notes": "Send the WSJT-X QSO Logged packet too; fix the shim preflight refusing GET"
 }

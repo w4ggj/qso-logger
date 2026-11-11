@@ -3645,25 +3645,50 @@ let sendBusy = false, sendTimer = null, sendFails = 0;
    socket's buffer — nothing on the far side acknowledges anything. */
 const SEND_GAP = 25;
 
-/* ─── The two payloads ───
-   WSJT-X's UDP protocol is what most shacks already listen for, so it is
-   the default. Type 12 is "Logged ADIF": a QDataStream of big-endian
-   fields, each string a 32-bit byte count then UTF-8. Raw ADIF is there
-   for a bridge that just wants the text. */
+/* ─── The WSJT-X UDP protocol ───
+   Logging a QSO in WSJT-X puts TWO packets on the wire, and a receiver may
+   act on either: type 5 "QSO Logged", whose fields are laid out one after
+   another, and type 12 "Logged ADIF", which carries the record as text.
+   Sending only one of them means a receiver that reads the other sees
+   nothing — and the packet still arrives, so nothing reports the miss.
+   Both go out, in that order, as WSJT-X itself does.
+
+   A QDataStream is big-endian throughout. A string is a 32-bit byte count
+   then UTF-8; a null string is a count of 0xFFFFFFFF, which is not used
+   here — an absent field is sent as empty, which is what WSJT-X does. */
+const WSJTX_MAGIC  = 0xADBCCBDA;
+const WSJTX_SCHEMA = 3;
+/* The id names the sending program. It is "WSJT-X" rather than this app's
+   own name on purpose: receivers key on it, and a logger that announced
+   itself as something else would be filtered out by a shack set up for
+   WSJT-X. */
+const WSJTX_ID = 'WSJT-X';
+
 function wsjtxString(str) {
-  const b = new TextEncoder().encode(str);
+  const b = new TextEncoder().encode(str == null ? '' : String(str));
   const out = new Uint8Array(4 + b.length);
   new DataView(out.buffer).setUint32(0, b.length, false);
   out.set(b, 4);
   return out;
 }
-function wsjtxLoggedAdif(adifText, id) {
-  const head = new Uint8Array(12);
-  const v = new DataView(head.buffer);
-  v.setUint32(0, 0xADBCCBDA, false);     // magic
-  v.setUint32(4, 2, false);              // schema
-  v.setUint32(8, 12, false);             // type 12 = Logged ADIF
-  const parts = [head, wsjtxString(id), wsjtxString(adifText)];
+
+/* QDateTime: Julian day as a 64-bit integer, milliseconds since midnight,
+   then the time spec — 1 for UTC, which is what the log keeps. */
+function wsjtxDateTime(ymd, hms) {
+  const y = +ymd.slice(0, 4), mo = +ymd.slice(4, 6), d = +ymd.slice(6, 8);
+  const t = (hms + '000000').slice(0, 6);
+  const hh = +t.slice(0, 2), mi = +t.slice(2, 4), ss = +t.slice(4, 6);
+  const a = Math.floor((14 - mo) / 12), yy = y + 4800 - a, mm = mo + 12 * a - 3;
+  const jdn = d + Math.floor((153 * mm + 2) / 5) + 365 * yy
+            + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) - 32045;
+  const out = new Uint8Array(13), v = new DataView(out.buffer);
+  v.setBigInt64(0, BigInt(jdn), false);
+  v.setUint32(8, ((hh * 60 + mi) * 60 + ss) * 1000, false);
+  v.setUint8(12, 1);
+  return out;
+}
+
+function wsjtxJoin(parts) {
   const len = parts.reduce((n, p) => n + p.length, 0);
   const out = new Uint8Array(len);
   let at = 0;
@@ -3671,18 +3696,69 @@ function wsjtxLoggedAdif(adifText, id) {
   return out;
 }
 
+function wsjtxHeader(mtype) {
+  const head = new Uint8Array(12), v = new DataView(head.buffer);
+  v.setUint32(0, WSJTX_MAGIC, false);
+  v.setUint32(4, WSJTX_SCHEMA, false);
+  v.setUint32(8, mtype, false);
+  return wsjtxJoin([head, wsjtxString(WSJTX_ID)]);
+}
+
+/* Type 5, in the order the protocol lays the fields out. The log has one
+   time per contact, so off and on carry the same stamp. */
+function wsjtxQsoLogged(f) {
+  const freqHz = Math.round(parseFloat(f.freq || 0) * 1e6);
+  const hz = new Uint8Array(8);
+  new DataView(hz.buffer).setBigUint64(0, BigInt(freqHz), false);
+  return wsjtxJoin([
+    wsjtxHeader(5),
+    wsjtxDateTime(f.date, f.time),
+    wsjtxString(f.call), wsjtxString(f.grid),
+    hz,
+    wsjtxString(f.mode), wsjtxString(f.rstS), wsjtxString(f.rstR),
+    wsjtxString(''),                       // tx power: not logged here
+    wsjtxString(f.comment), wsjtxString(f.name),
+    wsjtxDateTime(f.date, f.time),
+    wsjtxString(f.op), wsjtxString(f.op), wsjtxString(f.myGrid),
+    wsjtxString(''), wsjtxString(''),      // exchange sent / received
+    wsjtxString('')                        // propagation mode
+  ]);
+}
+
+function wsjtxLoggedAdif(adifText) {
+  return wsjtxJoin([wsjtxHeader(12), wsjtxString(adifText)]);
+}
+
+/* Both packets are built from one reading of the entry, so the fields in
+   the type 5 and the ADIF in the type 12 cannot drift apart. */
+function sendFields(entry) {
+  const op = entryCtrlOp(entry);
+  let comment = entry.notes || '';
+  if (entry.gotaOp) comment = (comment ? comment + ' ' : '') + `[GOTA op: ${entry.gotaOp}]`;
+  return {
+    date: String(entry.date || '').replace(/-/g, ''),
+    time: String(entry.time || '').replace(':', '') + '00',
+    call: entry.call || '', grid: entry.theirGrid || '',
+    freq: entry.freq || '', mode: entry.mode || '',
+    rstS: entry.rstS || '', rstR: entry.rstR || '',
+    name: entry.name || '', comment, op,
+    myGrid: ($('grid-input') && $('grid-input').value.trim()) || ''
+  };
+}
+
 /* A whole ADIF document, header and all, which is what WSJT-X puts in a
    type 12 and what a bridge reading raw text expects to parse. */
 function sendAdifDoc(entry) {
   const grid = ($('grid-input') && $('grid-input').value.trim()) || '';
-  return '<adif_ver:5>3.1.0\n<programid:7>TavaOne\n<EOH>\n'
-       + buildAdifRecord(entry, grid) + '\n';
+  return '\n<adif_ver:5>3.1.0\n<programid:6>WSJT-X\n<EOH>\n'
+       + buildAdifRecord(entry, grid) + ' <EOR>';
 }
 
-function sendPayload(entry) {
+/* One QSO can be more than one datagram. */
+function sendPayloads(entry) {
   const doc = sendAdifDoc(entry);
-  return sendFmt === 'adif' ? new TextEncoder().encode(doc)
-                            : wsjtxLoggedAdif(doc, 'TavaOne');
+  if (sendFmt === 'adif') return [new TextEncoder().encode(doc)];
+  return [wsjtxQsoLogged(sendFields(entry)), wsjtxLoggedAdif(doc)];
 }
 
 function sendEndpoint() {
@@ -3751,13 +3827,17 @@ async function sendFlush() {
   try {
     while (sendQueue.length) {
       const job = sendQueue[0];
-      const body = sendPayload(job.entry);
-      const r = await fetch(sendEndpoint(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body
-      });
-      if (!r.ok) throw new Error('shim said ' + r.status);
+      const packets = sendPayloads(job.entry);
+      for (let i = 0; i < packets.length; i++) {
+        const r = await fetch(sendEndpoint(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: packets[i]
+        });
+        if (!r.ok) throw new Error('shim said ' + r.status);
+        /* A breath between the two halves of one QSO, as WSJT-X leaves. */
+        if (i < packets.length - 1) await new Promise(r2 => setTimeout(r2, SEND_GAP));
+      }
       sendQueue.shift();
       if (job.key) sendDone.add(job.key);
       sendQueueSave();
@@ -5405,7 +5485,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-31';
+const APP_BUILD = '2026-11-11-32';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
