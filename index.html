@@ -671,6 +671,25 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 }
 .rig-stats.bad { color: var(--amber); }
 
+.ptt-btn {
+  display: block; text-align: center; cursor: pointer; user-select: none;
+  padding: 14px 10px; border-radius: var(--r);
+  border: 1px solid var(--border2); background: var(--bg3);
+  font-family: var(--ui); font-size: 0.78rem; font-weight: 800;
+  letter-spacing: 0.18em; color: var(--dim);
+}
+.ptt-btn:hover { border-color: var(--border3); color: var(--text); }
+.ptt-btn.on {
+  background: var(--red); border-color: var(--red); color: #fff;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.25);
+}
+/* While keyed the whole window carries a red edge: a transmit indicator that
+   cannot be missed, scrolled past or hidden behind a panel. */
+body.tx::after {
+  content: ''; position: fixed; inset: 0; z-index: 9000; pointer-events: none;
+  box-shadow: inset 0 0 0 3px var(--red);
+}
+
 .rig-untested {
   margin-top: 6px; font-size: 0.6rem; line-height: 1.45;
   color: var(--amber); letter-spacing: 0.03em;
@@ -1331,6 +1350,32 @@ footer {
             <select id="rig-flow"   onchange="setRigParam('flow', this.value)"
               title="Handshake. Hardware drives RTS, which is PTT on many radios."></select>
           </div>
+          <div id="ptt-wrap" style="display:none;margin-top:10px;">
+            <div id="ptt-btn" class="ptt-btn" role="button" tabindex="0"
+                 onpointerdown="pttButtonDown(event)"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();pttButtonDown();}"
+                 onkeyup="if(event.key==='Enter'){pttButtonUp();}">HOLD TO TALK</div>
+            <div id="ptt-untested" class="rig-untested" style="display:none">
+              The transmit command for this radio comes from the published protocol and has not been run
+              against one &mdash; check it keys <em>and unkeys</em> into a dummy load first.
+            </div>
+            <div class="rig-row" style="margin-top:6px;">
+              <select id="ptt-mode" onchange="setPttMode(this.value)" title="Hold to talk, or click once on and once off">
+                <option value="hold">Hold</option>
+                <option value="toggle">Toggle</option>
+              </select>
+              <select id="ptt-max" onchange="setPttMax(this.value)" title="Transmit is cut off after this long">
+                <option value="30">30s limit</option>
+                <option value="60">60s limit</option>
+                <option value="120">120s limit</option>
+                <option value="300">5m limit</option>
+                <option value="600">10m limit</option>
+              </select>
+              <button class="btn btn-outline" onclick="pttCaptureKey()"
+                style="padding:7px 10px;font-size:0.62rem;flex:1">KEY: <span id="ptt-key">none</span></button>
+            </div>
+          </div>
+
           <div id="rig-defaults" class="rig-stats" style="display:none">
             Changed from this radio&rsquo;s defaults &mdash;
             <a href="#" onclick="resetRigParams();return false;" style="color:var(--amber)">reset</a>
@@ -3560,6 +3605,201 @@ function usbLine(p) {
    docs. So there is a sub-second window at connect that no web page can close.
    Lowering the lines first thing shrinks it to a blip instead of a stuck
    carrier. */
+/* ══════════════════════════════════════════
+   PTT
+
+   Until now this app had no reason to transmit, and a test asserted it never
+   sent the CI-V transmit command. That guarantee is deliberately replaced by
+   a narrower one: 0x1C goes out only from an explicit operator action — a
+   button press or the assigned key — and never from polling, tuning, or
+   anything automatic.
+
+   Everything here is about not leaving a transmitter keyed. A web page can
+   be closed, hidden, crashed or lose its port at any moment, and CAT PTT
+   latches in the radio: closing the port does not unkey it. So every path
+   that could strand a transmission unkeys first, and a timeout cuts it off
+   even if the operator walks away.
+══════════════════════════════════════════ */
+const PTT_KEY_KEY  = 'w4ggj_ptt_key';
+const PTT_MODE_KEY = 'w4ggj_ptt_mode';
+const PTT_MAX_KEY  = 'w4ggj_ptt_max';
+const PTT_MAX_CHOICES = [30, 60, 120, 300, 600];
+
+let pttOn = false, pttTimer = null, pttStartedAt = 0;
+let pttMode = 'hold';          // 'hold' while the key or button is down, or 'toggle'
+let pttMax = 120;              // seconds before the dead-man timer cuts in
+let pttHotkey = null;          // { code, label, ctrl, alt, shift }
+let pttCapturing = false;
+
+function rigCanTx() {
+  const d = RIG_TYPES[rigType];
+  return !!(rigConnected && d && d.tx);
+}
+
+/* The only place that writes a transmit command. Everything else calls this. */
+async function pttSet(on, why) {
+  if (!rigCanTx()) {
+    if (on) toast('Connect a rig before transmitting', 'wrn');
+    return;
+  }
+  on = !!on;
+  if (on === pttOn) return;
+
+  /* Record the new state before the bytes go out, not after. The write takes
+     a moment, and a key released inside that window has to find pttOn true or
+     its unkey is dropped as redundant — which leaves the radio transmitting. */
+  pttOn = on;
+  clearTimeout(pttTimer);
+  if (on) {
+    pttStartedAt = Date.now();
+    pttTimer = setTimeout(() => {
+      pttSet(false, 'timeout');
+      toast(`Transmit stopped after ${pttMax}s — the time limit in Settings`, 'wrn');
+    }, pttMax * 1000);
+  }
+  paintPtt();
+
+  try {
+    await RIG_TYPES[rigType].tx(on);
+  } catch (e) {
+    if (on) {
+      /* It never keyed, so take the claim back rather than show a transmit
+         indicator for a radio that is still listening. */
+      pttOn = false;
+      clearTimeout(pttTimer);
+      toast('Could not key the radio — check the cable and the port', 'err');
+      paintPtt();
+    } else {
+      /* A failed unkey is the dangerous one. Say so; do not just log it. */
+      toast('UNKEY FAILED — take the radio off the air manually', 'err');
+    }
+  }
+}
+
+/* Unkey without caring whether we thought we were keyed: used by the paths
+   that must not leave the radio on the air. */
+function pttPanic(why) {
+  clearTimeout(pttTimer);
+  if (!rigCanTx()) { pttOn = false; paintPtt(); return; }
+  try { RIG_TYPES[rigType].tx(false); } catch (e) {}
+  if (pttOn && why) toast('Transmit stopped: ' + why, 'wrn');
+  pttOn = false;
+  paintPtt();
+}
+
+/* ─── The assigned key ───
+   A function key is the sensible choice: it keys without typing anything, so
+   a callsign can be entered with one hand while the other holds the key. Any
+   key can be assigned, and whatever is chosen is swallowed while transmitting
+   so it does not also land in the field being typed in.
+
+   Escape always unkeys, whatever is assigned. A stuck transmitter needs one
+   key that is guaranteed to stop it. */
+function pttKeyLabel(k) {
+  if (!k) return 'none';
+  return (k.ctrl ? 'Ctrl+' : '') + (k.alt ? 'Alt+' : '') + (k.shift ? 'Shift+' : '') + k.label;
+}
+function pttKeyMatches(e, k) {
+  return !!k && e.code === k.code && !!e.ctrlKey === !!k.ctrl
+      && !!e.altKey === !!k.alt && !!e.shiftKey === !!k.shift;
+}
+
+function pttCaptureKey() {
+  pttCapturing = true;
+  paintPtt();
+  toast('Press the key to use for PTT — Escape to cancel', 'wrn');
+}
+
+document.addEventListener('keydown', e => {
+  if (pttCapturing) {
+    e.preventDefault(); e.stopPropagation();
+    /* Ctrl, Alt, Shift and Meta each raise their own keydown before the key
+       they modify. Wait for the real one. */
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+    pttCapturing = false;
+    if (e.key === 'Escape') { toast('PTT key unchanged'); paintPtt(); return; }
+    pttHotkey = {
+      code: e.code,
+      label: e.key.length === 1 ? e.key.toUpperCase() : e.key,
+      ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey
+    };
+    try { localStorage.setItem(PTT_KEY_KEY, JSON.stringify(pttHotkey)); } catch (err) {}
+    toast('PTT key set to ' + pttKeyLabel(pttHotkey), 'ok');
+    paintPtt();
+    return;
+  }
+
+  /* Escape is the panic stop and is never reassignable away. */
+  if (e.key === 'Escape' && pttOn) { e.preventDefault(); pttPanic('Escape'); return; }
+
+  if (!pttKeyMatches(e, pttHotkey)) return;
+  e.preventDefault();
+  if (e.repeat) return;                    // holding a key repeats; key once
+  if (pttMode === 'toggle') pttSet(!pttOn, 'key');
+  else pttSet(true, 'key');
+}, true);
+
+document.addEventListener('keyup', e => {
+  if (pttCapturing) return;
+  if (pttMode === 'hold' && pttOn && pttKeyMatches(e, pttHotkey)) {
+    e.preventDefault();
+    pttSet(false, 'key released');
+  }
+}, true);
+
+function setPttMode(v) {
+  pttMode = v === 'toggle' ? 'toggle' : 'hold';
+  try { localStorage.setItem(PTT_MODE_KEY, pttMode); } catch (e) {}
+  if (pttOn) pttPanic('mode changed');
+  paintPtt();
+}
+function setPttMax(v) {
+  const n = Number(v);
+  if (PTT_MAX_CHOICES.indexOf(n) === -1) return;
+  pttMax = n;
+  try { localStorage.setItem(PTT_MAX_KEY, String(n)); } catch (e) {}
+  paintPtt();
+}
+
+/* The button: hold-to-talk needs pointer events rather than click, and
+   pointerup is listened for on the window so releasing off the button still
+   unkeys. */
+function pttButtonDown(e) {
+  if (e) e.preventDefault();
+  if (pttMode === 'toggle') pttSet(!pttOn, 'button');
+  else pttSet(true, 'button');
+}
+function pttButtonUp() {
+  if (pttMode === 'hold' && pttOn) pttSet(false, 'button released');
+}
+window.addEventListener('pointerup', pttButtonUp);
+window.addEventListener('pointercancel', pttButtonUp);
+
+function paintPtt() {
+  const wrap = $('ptt-wrap');
+  if (wrap) wrap.style.display = rigCanTx() ? '' : 'none';
+
+  const btn = $('ptt-btn');
+  if (btn) {
+    btn.classList.toggle('on', pttOn);
+    btn.textContent = pttOn ? 'TRANSMITTING' : (pttMode === 'hold' ? 'HOLD TO TALK' : 'PTT');
+  }
+  document.body.classList.toggle('tx', pttOn);
+
+  const k = $('ptt-key');
+  if (k) k.textContent = pttCapturing ? 'press a key...' : pttKeyLabel(pttHotkey);
+  const m = $('ptt-mode');
+  if (m && m.value !== pttMode) m.value = pttMode;
+  const mx = $('ptt-max');
+  if (mx && mx.value !== String(pttMax)) mx.value = String(pttMax);
+
+  const warn = $('ptt-untested');
+  if (warn) {
+    const d = RIG_TYPES[rigType];
+    warn.style.display = (d && d.tx && !d.txTested) ? '' : 'none';
+  }
+}
+
 /* ─── Serial parameters, per radio ───
    Every other rig-control program lets the operator set the whole line: rate,
    data bits, stop bits, parity and handshake. Guessing them one at a time as
@@ -3893,6 +4133,9 @@ const RIG_TYPES = {
     poll()     { civSend(0x03); },
     pollMode() { civSend(0x04); },
     tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
+    /* FE FE <addr> E0 1C 00 01 FD to key, ...00 FD to unkey. */
+    tx(on)   { return civSend(0x1C, [0x00, on ? 0x01 : 0x00], true); },
+    txTested: true,
     parse()  { civParse(); }
   },
   yaesu: {
@@ -3903,6 +4146,7 @@ const RIG_TYPES = {
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD0;'); },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';'); },
+    tx(on)   { return catSend(on ? 'TX1;' : 'TX0;', true); },
     parse()  { catParse(yaesuHandleMsg); }
   },
   kenwood: {
@@ -3915,6 +4159,7 @@ const RIG_TYPES = {
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD;'); },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(11, '0') + ';'); },
+    tx(on)   { return catSend(on ? 'TX;' : 'RX;', true); },
     parse()  { catParse(kenwoodHandleMsg); }
   }
 };
@@ -4234,6 +4479,7 @@ async function rigConnect(port, auto) {
     rigModeDue = 0;
     rigPollTimer = setInterval(rigPoll, 1000);   // watchdog; replies drive the rest
     rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
+    paintPtt();
     clearInterval(rigStatsTimer);
     rigStatsTimer = setInterval(paintRigStats, 1000);
     if (!rigConnect._wired) {
@@ -4299,12 +4545,27 @@ async function rigAutoReconnect() {
   }
 }
 
+/* Hiding the tab, closing it, or losing the window are all ways to walk away
+   from a keyed radio, so each one unkeys. Blur is included because a hold on
+   the key can never deliver its keyup once the window is gone. */
+(function wirePttSafety() {
+  const off = why => () => { if (pttOn) pttPanic(why); };
+  window.addEventListener('blur', off('window lost focus'));
+  window.addEventListener('pagehide', off(''));
+  window.addEventListener('beforeunload', off(''));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && pttOn) pttPanic('tab hidden');
+  });
+})();
+
 async function rigDisconnect(silent, why) {
+  if (pttOn) pttPanic('rig disconnected');
   if (rigPollTimer) { clearInterval(rigPollTimer); rigPollTimer = null; }
   if (rigNextPoll) { clearTimeout(rigNextPoll); rigNextPoll = null; }
   if (rigQuietTimer) { clearTimeout(rigQuietTimer); rigQuietTimer = null; }
   if (rigStatsTimer) { clearInterval(rigStatsTimer); rigStatsTimer = null; }
   const st = $('rig-stats'); if (st) st.style.display = 'none';
+  paintPtt();
   try { if (rigLink) await rigLink.close(); } catch (e) {}
   rigLink = null;
   rigPort = rigReader = rigWriter = null;
@@ -4315,21 +4576,21 @@ async function rigDisconnect(silent, why) {
 }
 
 /* ─── Icom CI-V: binary frames ─── */
-async function civSend(cmd, data) {
+async function civSend(cmd, data, strict) {
   if (!rigLink) return;
   const f = [0xFE, 0xFE, rigCivAddr, CIV_CTRL, cmd];
   if (Array.isArray(data)) f.push(...data);
   else if (data !== undefined) f.push(data);
   f.push(0xFD);
   try { await rigLink.write(new Uint8Array(f)); }
-  catch (e) { setRigStatus('err', 'Write error'); }
+  catch (e) { setRigStatus('err', 'Write error'); if (strict) throw e; }
 }
 
 /* ─── CAT: ASCII, ';'-terminated. Yaesu and Kenwood share the framing. ─── */
-async function catSend(str) {
+async function catSend(str, strict) {
   if (!rigLink) return;
   try { await rigLink.write(new TextEncoder().encode(str)); }
-  catch (e) { setRigStatus('err', 'Write error'); }
+  catch (e) { setRigStatus('err', 'Write error'); if (strict) throw e; }
 }
 
 /* ─── Driver dispatch ───
@@ -4628,7 +4889,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-09-24';
+const APP_BUILD = '2026-11-11-25';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -4731,6 +4992,14 @@ paintPin();
      inherit a raised line from the build that used to raise one. */
   rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
   migrateRigParams();
+  try {
+    const k = JSON.parse(localStorage.getItem(PTT_KEY_KEY) || 'null');
+    if (k && k.code) pttHotkey = k;
+    pttMode = localStorage.getItem(PTT_MODE_KEY) === 'toggle' ? 'toggle' : 'hold';
+    const mx = Number(localStorage.getItem(PTT_MAX_KEY));
+    if (PTT_MAX_CHOICES.indexOf(mx) !== -1) pttMax = mx;
+  } catch (e) {}
+  paintPtt();
   paintRigDtr();
   paintAutofill();
   if (!rigSupported() && !usbSupported()) {

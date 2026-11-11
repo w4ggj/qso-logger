@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-09-24",
-  "notes": "IC-7300 confirmed on air - no longer labelled untested"
+  "build": "2026-11-11-25",
+  "notes": "PTT over the CAT port, with an assignable key"
 }
