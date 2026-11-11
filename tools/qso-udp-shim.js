@@ -55,8 +55,14 @@ const sock = dgram.createSocket('udp4');
 
 function cors(res, req) {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  /* GET belongs here as much as POST: /health is a GET, and the logger is
+     served over HTTPS, so Chrome preflights even a request it would
+     otherwise send straight out @M@ 127.0.0.1 is a more private address than
+     the page. A preflight that does not name the method the page is about
+     to use fails, and the page is told nothing beyond "it did not work". */
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers',
+    req.headers['access-control-request-headers'] || 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
   /* Chrome asks before letting a public page reach a private address. */
   if (req.headers['access-control-request-private-network'] === 'true') {

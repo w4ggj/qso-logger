@@ -9,7 +9,7 @@ LISTEN=${LISTEN:-2236}      # port the logger POSTs to
 UDPPORT=${UDPPORT:-2235}    # port your bridge listens on
 # ${BRIDGE-...} not ${BRIDGE:-...}: an explicitly empty BRIDGE means skip,
 # where the colon form would quietly put the default back.
-BRIDGE=${BRIDGE-replay_to_cloner.py}    # your forwarder; set empty to skip
+BRIDGE=${BRIDGE-field_cloner.py}    # your forwarder; set empty to skip
 
 cd "$(dirname "$0")" || exit 1
 

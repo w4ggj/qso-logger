@@ -19,9 +19,9 @@ REM ---- Your bridge --------------------------------------------------------
 REM Path to the Python script that forwards to the home shack. A bare
 REM filename is looked for next to this file; otherwise put the full path,
 REM in quotes if it has spaces:
-REM     set BRIDGE=C:\Ham\replay_to_cloner.py
+REM     set BRIDGE=C:\Ham\field_cloner.py
 REM Leave it empty to start only the shim.
-set BRIDGE=replay_to_cloner.py
+set BRIDGE=field_cloner.py
 
 REM ---- Ports --------------------------------------------------------------
 REM Port the logger POSTs to. Settings: http://127.0.0.1:<LISTEN>
