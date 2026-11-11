@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-25",
-  "notes": "PTT over the CAT port, with an assignable key"
+  "build": "2026-11-11-26",
+  "notes": "Set the mode from the logger - LSB, USB, CW, AM, FM, RTTY"
 }
