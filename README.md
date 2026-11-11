@@ -35,8 +35,9 @@ student was on the mic.
   each step is sent to the radio, so the wheel is the VFO knob. Steps snap onto
   the step grid, so the first click from an off-grid frequency lands on a round
   number rather than carrying the odd digits along.
-- **Mode from the logger** — six buttons in the rig panel — LSB, USB, CW, AM,
-  FM, RTTY — with the radio's current mode lit. One tap to flip sideband. The
+- **Mode from the logger** — six buttons in the entry form, under Quick Band —
+  LSB, USB, CW, AM, FM, RTTY — with the radio's current mode lit. One tap to
+  flip sideband, in the same place you changed band, with no trip to Settings. The
   readout follows the radio's own reply rather than the button, so what you see
   is what the radio did.
 - **PTT over the CAT cable** — key the radio from the logger, with the
@@ -232,9 +233,17 @@ Adding another radio means one entry in `RIG_TYPES` — everything else
 
 ### Setting the mode
 
-Six buttons, under the serial parameters, appear once a radio is connected.
-They send the mode and then ask the radio what it is on, so the readout and
-the lit button show the radio's answer rather than what was requested.
+Six buttons sit in the entry form directly under Quick Band, and appear once a
+radio is connected. That is where they belong: changing band and changing
+sideband are the same move, and neither should need a trip into Settings. They
+send the mode and then ask the radio what it is on, so the readout and the lit
+button show the radio's answer rather than what was requested.
+
+Two things called Mode sit next to each other, so both say which they are:
+**Radio Mode** sets the rig, **Mode** is what goes in the log. With autofill on
+the second follows the first (LSB and USB both log as SSB), but they are not
+the same field — a DATA mode on the radio can be logged as FT8, FT4, JS8 or
+PSK31, and only the operator knows which.
 
 | Driver | Command |
 |---|---|
