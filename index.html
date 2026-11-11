@@ -1383,8 +1383,9 @@ footer {
             <div class="udp-help">
               A browser cannot send UDP &mdash; there is no API for it. <code>tools/qso-udp-shim.js</code>
               in the repo turns an HTTP POST into the datagram your bridge is already listening for,
-              and does nothing else. Run it on <em>this</em> machine:
-              <code>node qso-udp-shim.js --port 2235</code>. It has to be this machine: a browser
+              and does nothing else. On Windows, double-click
+              <code>tools/start-shack-bridge.bat</code> on <em>this</em> machine; otherwise
+              <code>node qso-udp-shim.js --port 2235</code>. Your own bridge has to be running too. It has to be this machine: a browser
               refuses an HTTPS page reaching <code>http://</code> anywhere but localhost.
               A QSO that cannot be sent waits in a queue and goes out when the shim answers &mdash;
               nothing is lost, and logging never blocks.
@@ -5404,7 +5405,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-30';
+const APP_BUILD = '2026-11-11-31';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

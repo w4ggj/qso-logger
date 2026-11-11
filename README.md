@@ -473,15 +473,44 @@ else — the request body becomes the packet, byte for byte:
 browser  --HTTP POST-->  shim  --UDP-->  your bridge / N1MM / Log4OM / JTAlert
 ```
 
-It has no dependencies and needs Node 18 or newer:
+It has no dependencies and needs Node 18 or newer.
+
+**On Windows, double-click `tools/start-shack-bridge.bat`.** It starts two
+things:
+
+1. your own forwarder, in its own window — the `set BRIDGE=` line near the top
+   of the file names it, `replay_to_cloner.py` by default. A bare filename is
+   looked for next to the `.bat`; otherwise put the full path there. Leave it
+   empty to start only the shim.
+2. the shim, in the window you double-clicked.
+
+The bridge goes first, with a moment to bind its port, so it is already
+listening before the shim can send it anything. If the bridge script or Python
+is missing, it says so and starts the shim anyway rather than failing the lot.
+Node being missing is fatal, and it says where to get it.
+
+The two ports are named lines at the top as well. Closing the shim's window
+stops the shim; the bridge has its own window and is closed separately.
+
+`tools/start-shack-bridge.sh` does the same on macOS and Linux, taking
+`BRIDGE`, `LISTEN` and `UDPPORT` from the environment, and stops both children
+when it stops.
+
+To start it automatically at login on Windows, put a shortcut to the `.bat` in
+the Startup folder — press Win+R and enter `shell:startup`.
+
+Or run it directly:
 
 ```
 node tools/qso-udp-shim.js                               # listens 2236, sends to 127.0.0.1:2235
 node tools/qso-udp-shim.js --listen 2236 --port 2235     # or say so
 ```
 
-Then put `http://127.0.0.1:2236` in the logger's Settings, with the UDP port
-beside it.
+Either way, put `http://127.0.0.1:2236` in the logger's Settings with the UDP
+port beside it. **Your own bridge has to be running too**: the shim only puts
+the datagram on the port, and nothing acknowledges it — UDP has no delivery
+report, so the logger showing "Sent" means the packet left, not that your
+bridge received it. Watch your bridge's own log the first time.
 
 **The shim has to run on the same machine as the browser.** The logger is
 served over HTTPS, and a browser refuses an HTTPS page reaching `http://`
