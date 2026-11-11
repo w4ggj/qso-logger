@@ -35,6 +35,10 @@ student was on the mic.
   each step is sent to the radio, so the wheel is the VFO knob. Steps snap onto
   the step grid, so the first click from an off-grid frequency lands on a round
   number rather than carrying the odd digits along.
+- **Mode from the logger** — six buttons in the rig panel — LSB, USB, CW, AM,
+  FM, RTTY — with the radio's current mode lit. One tap to flip sideband. The
+  readout follows the radio's own reply rather than the button, so what you see
+  is what the radio did.
 - **PTT over the CAT cable** — key the radio from the logger, with the
   transmit command sent down the same port the frequency comes up. Hold-to-talk
   or toggle, on a button or on a key you assign (a function key keeps both hands
@@ -225,6 +229,31 @@ Adding another radio means one entry in `RIG_TYPES` — everything else
 (connect, reconnect, polling, wheel tuning, band memory, autofill) is shared.
 
 ---
+
+### Setting the mode
+
+Six buttons, under the serial parameters, appear once a radio is connected.
+They send the mode and then ask the radio what it is on, so the readout and
+the lit button show the radio's answer rather than what was requested.
+
+| Driver | Command |
+|---|---|
+| **Icom CI-V** | `06 <mode> [filter]` |
+| **Yaesu CAT** | `MD0<n>;` |
+| **Kenwood / Elecraft** | `MD<n>;` |
+
+**The filter byte matters.** Icom's command 06 takes an optional filter byte,
+and leaving it off does *not* keep the filter you are on: the radio selects
+the **default filter for the mode being set**. An operator running FIL2 on USB
+would land on FIL1 after a sideband change. The 04 mode reply carries the
+filter in its second byte, so the app keeps whatever the radio last reported
+and hands it back with the mode — the filter survives the change. A radio that
+reports no filter byte is sent none, which is also the form the older sets
+accept, so this needs no per-model table.
+
+Only the six modes all three families agree on are offered. A radio sitting on
+something else — DATA-U, CW-R, C4FM — reads back correctly in the readout and
+lights no button, rather than lighting an approximate one.
 
 ### PTT
 

@@ -671,6 +671,19 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 }
 .rig-stats.bad { color: var(--amber); }
 
+.rig-modes { display: flex; gap: 4px; margin-top: 8px; }
+.mode-btn {
+  flex: 1; padding: 7px 2px; cursor: pointer;
+  border: 1px solid var(--border2); border-radius: var(--r);
+  background: var(--bg3); color: var(--dim);
+  font-family: var(--ui); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em;
+}
+.mode-btn:hover { border-color: var(--border3); color: var(--text); }
+.mode-btn.on {
+  background: var(--green); border-color: var(--green);
+  color: var(--bg); font-weight: 800;
+}
+
 .ptt-btn {
   display: block; text-align: center; cursor: pointer; user-select: none;
   padding: 14px 10px; border-radius: var(--r);
@@ -1350,6 +1363,15 @@ footer {
             <select id="rig-flow"   onchange="setRigParam('flow', this.value)"
               title="Handshake. Hardware drives RTS, which is PTT on many radios."></select>
           </div>
+          <div id="rig-modes" class="rig-modes" style="display:none">
+            <button class="mode-btn" data-mode="LSB" onclick="rigSetMode('LSB')">LSB</button>
+            <button class="mode-btn" data-mode="USB" onclick="rigSetMode('USB')">USB</button>
+            <button class="mode-btn" data-mode="CW" onclick="rigSetMode('CW')">CW</button>
+            <button class="mode-btn" data-mode="AM" onclick="rigSetMode('AM')">AM</button>
+            <button class="mode-btn" data-mode="FM" onclick="rigSetMode('FM')">FM</button>
+            <button class="mode-btn" data-mode="RTTY" onclick="rigSetMode('RTTY')">RTTY</button>
+          </div>
+
           <div id="ptt-wrap" style="display:none;margin-top:10px;">
             <div id="ptt-btn" class="ptt-btn" role="button" tabindex="0"
                  onpointerdown="pttButtonDown(event)"
@@ -4132,6 +4154,17 @@ const RIG_TYPES = {
     baudTitle: 'CI-V baud — must match SET → Connectors → CI-V → CI-V Baud Rate on the radio',
     poll()     { civSend(0x03); },
     pollMode() { civSend(0x04); },
+    /* Command 06 takes the mode and an OPTIONAL filter byte. Leaving the
+       filter off does not keep the current one: the radio picks the default
+       filter for the mode being selected, so an operator running FIL2 on USB
+       would land on FIL1 after a sideband change. The 04 reply carries the
+       filter in its second byte, so hand back whatever was last reported and
+       the filter survives. Radios that report no filter byte are sent none,
+       which is also the form the older sets accept. */
+    setMode(code) {
+      civSend(0x06, rigCivFilter == null ? [code] : [code, rigCivFilter]);
+    },
+    modes: { LSB: 0x00, USB: 0x01, CW: 0x03, AM: 0x02, FM: 0x05, RTTY: 0x04 },
     tune(hz) { civSend(0x05, civEncodeFreq(hz)); },
     /* FE FE <addr> E0 1C 00 01 FD to key, ...00 FD to unkey. */
     tx(on)   { return civSend(0x1C, [0x00, on ? 0x01 : 0x00], true); },
@@ -4145,6 +4178,9 @@ const RIG_TYPES = {
     /* MD0 on Yaesu: the 0 selects the VFO. Kenwood has no such digit. */
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD0;'); },
+    setMode(code) { catSend('MD0' + code + ';'); },
+    /* CW is CW-U and RTTY is RTTY-L: the usual side for each. */
+    modes: { LSB: '1', USB: '2', CW: '3', AM: '5', FM: '4', RTTY: '6' },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(9, '0') + ';'); },
     tx(on)   { return catSend(on ? 'TX1;' : 'TX0;', true); },
     parse()  { catParse(yaesuHandleMsg); }
@@ -4158,6 +4194,8 @@ const RIG_TYPES = {
        differences are exactly why this is its own driver. */
     poll()     { catSend('FA;'); },
     pollMode() { catSend('MD;'); },
+    setMode(code) { catSend('MD' + code + ';'); },
+    modes: { LSB: '1', USB: '2', CW: '3', AM: '5', FM: '4', RTTY: '6' },
     tune(hz) { catSend('FA' + String(Math.round(hz)).padStart(11, '0') + ';'); },
     tx(on)   { return catSend(on ? 'TX;' : 'RX;', true); },
     parse()  { catParse(kenwoodHandleMsg); }
@@ -4210,6 +4248,11 @@ let rigPollTimer = null, rigQuietTimer = null, rigStatsTimer = null;
 let rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
 let rigBuf = [], rigCivAddr = 0x58, rigConnected = false;
 let rigModeLabel = '', rigLastHz = 0;
+/* The raw code the radio last reported, so the mode buttons can show which
+   one is actually selected rather than guessing from a label. */
+let rigModeCode = null;
+/* CI-V only: the filter byte from the last mode reply. See setMode above. */
+let rigCivFilter = null;
 let rigAutofill = true;   // push freq/band/mode into the entry fields
 
 function toggleAutofill() {
@@ -4480,6 +4523,7 @@ async function rigConnect(port, auto) {
     rigPollTimer = setInterval(rigPoll, 1000);   // watchdog; replies drive the rest
     rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
     paintPtt();
+    paintRigModes();
     clearInterval(rigStatsTimer);
     rigStatsTimer = setInterval(paintRigStats, 1000);
     if (!rigConnect._wired) {
@@ -4566,10 +4610,12 @@ async function rigDisconnect(silent, why) {
   if (rigStatsTimer) { clearInterval(rigStatsTimer); rigStatsTimer = null; }
   const st = $('rig-stats'); if (st) st.style.display = 'none';
   paintPtt();
+  paintRigModes();
   try { if (rigLink) await rigLink.close(); } catch (e) {}
   rigLink = null;
   rigPort = rigReader = rigWriter = null;
   rigConnected = false; rigBuf = []; rigModeLabel = ''; rigLastHz = 0;
+  rigModeCode = null; rigCivFilter = null;
   const btn = $('rig-btn'); if (btn) btn.textContent = 'CONNECT RIG';
   setRigStatus('off', why || 'Not connected');
   if (!silent) toast(why || 'Rig disconnected');
@@ -4710,6 +4756,7 @@ function civHandleFrame(f) {
     const hz = civDecodeFreq(data);
     if (hz) rigSetFreq(hz);
   } else if (cmd === 0x04 || cmd === 0x01) { // mode read reply, or transceive broadcast
+    if (data.length >= 2) rigCivFilter = data[1];
     if (data.length >= 1) civSetMode(data[0]);
   }
 }
@@ -4765,6 +4812,7 @@ const YAESU_MODE_APP = {
 };
 
 function paintRigReadout() {
+  paintRigModes();
   if (!rigConnected || !rigLastHz) return;
   setRigStatus('ok', `${fmtMhz(rigLastHz)} MHz${rigModeLabel ? '  ' + rigModeLabel : ''}`);
 }
@@ -4781,6 +4829,7 @@ function rigSetFreq(hz) {
 }
 
 function civSetMode(code) {
+  rigModeCode = code;
   rigModeLabel = CIV_MODE_LABEL[code] || '';
   paintRigReadout();
   applyRigMode(CIV_MODE_APP[code]);
@@ -4808,15 +4857,51 @@ function kenwoodHandleMsg(msg) {
 }
 
 function kenwoodSetMode(code) {
+  rigModeCode = code;
   rigModeLabel = KENWOOD_MODE_LABEL[code] || '';
   paintRigReadout();
   applyRigMode(KENWOOD_MODE_APP[code]);
 }
 
 function yaesuSetMode(code) {
+  rigModeCode = code;
   rigModeLabel = YAESU_MODE_LABEL[code] || '';
   paintRigReadout();
   applyRigMode(YAESU_MODE_APP[code]);
+}
+
+/* The modes offered as buttons: the ones all three families agree on. A radio
+   sitting on something else (DATA-U, CW-R, C4FM) still reads back correctly —
+   no button lights, and nothing is changed until one is pressed. */
+const RIG_MODES = ['LSB', 'USB', 'CW', 'AM', 'FM', 'RTTY'];
+
+function rigCanSetMode() {
+  const d = RIG_TYPES[rigType];
+  return !!(rigConnected && d && d.setMode && d.modes);
+}
+
+function rigSetMode(label) {
+  if (!rigCanSetMode()) return;
+  const d = RIG_TYPES[rigType];
+  const code = d.modes[label];
+  if (code === undefined) return;
+  d.setMode(code);
+  /* Show what the radio says, not what we asked for: ask again now rather
+     than waiting out the 2 s mode interval, and let the reply paint it. */
+  rigModeDue = 0;
+  setTimeout(() => { if (rigConnected && d.pollMode) { d.pollMode(); rigModeDue = Date.now() + RIG_MODE_GAP; } }, 80);
+}
+
+function paintRigModes() {
+  const wrap = $('rig-modes');
+  if (!wrap) return;
+  wrap.style.display = rigCanSetMode() ? '' : 'none';
+  if (!rigCanSetMode()) return;
+  const d = RIG_TYPES[rigType];
+  [...wrap.children].forEach(b => {
+    const on = rigModeCode !== null && d.modes[b.dataset.mode] === rigModeCode;
+    b.classList.toggle('on', on);
+  });
 }
 
 function applyRigMode(appMode) {
@@ -4889,7 +4974,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-25';
+const APP_BUILD = '2026-11-11-26';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
