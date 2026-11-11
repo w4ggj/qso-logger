@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-28",
-  "notes": "LSB-D and USB-D buttons; Icom mode now goes over command 26 so DATA is read and set"
+  "build": "2026-11-11-30",
+  "notes": "Send each QSO on as it is logged, plus a SHACK button for a merged session"
 }

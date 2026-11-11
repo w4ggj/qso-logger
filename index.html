@@ -688,6 +688,9 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
   color: var(--bg); font-weight: 800;
 }
 
+.udp-toggle { letter-spacing: 0.1em; }
+.udp-toggle.on { background: var(--green); border-color: var(--green); color: var(--bg); }
+
 .ptt-btn {
   display: block; text-align: center; cursor: pointer; user-select: none;
   padding: 14px 10px; border-radius: var(--r);
@@ -1350,7 +1353,49 @@ footer {
         </div>
 
         <div style="margin-top:14px;">
-          <div class="sec-label green" style="margin-top:0">CAT &mdash; Rig Control</div>
+          <div class="sec-label green" style="margin-top:0">Send QSOs to the shack</div>
+          <button class="btn btn-outline udp-toggle" id="send-toggle"
+            onclick="setSendOn(!sendOn)" style="width:100%">SEND TO SHACK: OFF</button>
+
+          <div id="send-body" style="display:none;margin-top:8px;">
+            <div class="udp-row">
+              <input type="text" id="send-url" placeholder="http://127.0.0.1:2236"
+                oninput="setSendUrl(this.value)" title="Where the shim is listening">
+            </div>
+            <div class="udp-row">
+              <input type="text" id="send-port" placeholder="UDP port (2235)"
+                inputmode="numeric" pattern="[0-9]*" oninput="setSendPort(this.value)"
+                title="The port your bridge listens on. Blank uses whatever the shim was started with."
+                style="flex:0 0 42%">
+              <select id="send-fmt" onchange="setSendFmt(this.value)" style="flex:1">
+                <option value="wsjtx">WSJT-X UDP</option>
+                <option value="adif">Raw ADIF</option>
+              </select>
+            </div>
+            <div class="udp-row">
+              <button class="btn btn-outline" onclick="sendTest()" style="flex:1">TEST</button>
+              <div class="udp-indicator">
+                <span class="udp-dot off" id="send-dot"></span>
+                <span id="send-readout">Off</span>
+              </div>
+            </div>
+            <div class="udp-help" id="send-queue" style="color:var(--amber)"></div>
+            <div class="udp-help">
+              A browser cannot send UDP &mdash; there is no API for it. <code>tools/qso-udp-shim.js</code>
+              in the repo turns an HTTP POST into the datagram your bridge is already listening for,
+              and does nothing else. Run it on <em>this</em> machine:
+              <code>node qso-udp-shim.js --port 2235</code>. It has to be this machine: a browser
+              refuses an HTTPS page reaching <code>http://</code> anywhere but localhost.
+              A QSO that cannot be sent waits in a queue and goes out when the shim answers &mdash;
+              nothing is lost, and logging never blocks.
+              Only QSOs logged <em>on this device</em> are sent automatically. Contacts merged in from
+              a phone or tablet go through <strong>&#8648; SHACK</strong> above the log, which sends
+              everything in the session that has not gone already &mdash; pressing it twice sends
+              nothing twice.
+            </div>
+          </div>
+
+          <div class="sec-label green" style="margin-top:16px">CAT &mdash; Rig Control</div>
 
           <div style="margin-bottom:6px;">
             <select id="rig-model" onchange="setRigModel(this.value)" style="width:100%"
@@ -1559,6 +1604,8 @@ footer {
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search callsign, band, mode, program…" oninput="renderTable()">
       </div>
+      <button class="btn btn-outline" id="send-session-btn" onclick="sendSession()"
+        style="display:none" title="Send every QSO in this session to the shack that has not gone already. Use it after merging a log in from your phone.">⇈ SHACK</button>
       <button class="btn btn-outline" onclick="exportADIF()">⤓ ADIF</button>
       <button class="btn btn-outline" onclick="exportCSV()">⤓ CSV</button>
     </div>
@@ -3278,13 +3325,17 @@ function addEntry() {
   const data = readForm();
   if (!data) return;
 
-  log.unshift(Object.assign({ id: Date.now() }, data, { session: activeSession }));
+  const entry = Object.assign({ id: Date.now() }, data, { session: activeSession });
+  log.unshift(entry);
   save();
   renderTable();
   updateStats();
   refreshGotaList();
   clearForm(true);
   toast(`Logged: ${data.call}`, 'ok');
+  /* The log here is the record; this is a copy going elsewhere. It must not
+     be able to stop a QSO being logged, so it is fired and forgotten. */
+  sendQso(entry);
   advanceTime();
 }
 
@@ -3547,6 +3598,263 @@ function dl(content, filename, type) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   SENDING EACH QSO ON AS IT IS LOGGED
+
+   A browser cannot send a UDP datagram. There is no API for it
+   — WebRTC is the nearest thing and it needs a peer speaking ICE
+   and DTLS, not a socket on a port. So this cannot talk to a
+   bridge, N1MM, Log4OM or JTAlert directly, however the network
+   is set up.
+
+   tools/qso-udp-shim.js turns an HTTP POST into that datagram
+   and does nothing else. The body becomes the packet byte for
+   byte, so the format lives here, where it is tested, and the
+   shim never needs changing when one changes.
+
+   The shim has to run on the same machine as the browser: this
+   page is HTTPS, and a browser refuses an HTTPS page reaching
+   http:// anywhere but localhost. That is not a setting.
+   ═══════════════════════════════════════════════════ */
+const SEND_ON_KEY   = 'w4ggj_send_on';
+const SEND_URL_KEY  = 'w4ggj_send_url';
+const SEND_PORT_KEY = 'w4ggj_send_port';
+const SEND_FMT_KEY  = 'w4ggj_send_fmt';
+const SEND_Q_KEY    = 'w4ggj_send_queue';
+const SEND_DONE_KEY = 'w4ggj_send_done';
+const SEND_URL_DFLT = 'http://127.0.0.1:2236';
+const SEND_FORMATS  = ['wsjtx', 'adif'];
+
+let sendOn = false;
+let sendUrl = SEND_URL_DFLT;
+let sendPort = '';              // blank = whatever the shim was started with
+let sendFmt = 'wsjtx';
+let sendQueue = [];             // QSOs not yet acknowledged
+/* What has already gone out, keyed by content rather than by the row's id,
+   so a contact logged on the phone and merged in here is recognised as the
+   same QSO. Pressing SEND SESSION twice, or re-importing the same backup,
+   therefore sends nothing a second time. */
+let sendDone = new Set();
+let sendBusy = false, sendTimer = null, sendFails = 0;
+/* A merged session can be hundreds of contacts. They go out one at a time
+   with a breath between them, so a burst cannot overrun the receiving
+   socket's buffer — nothing on the far side acknowledges anything. */
+const SEND_GAP = 25;
+
+/* ─── The two payloads ───
+   WSJT-X's UDP protocol is what most shacks already listen for, so it is
+   the default. Type 12 is "Logged ADIF": a QDataStream of big-endian
+   fields, each string a 32-bit byte count then UTF-8. Raw ADIF is there
+   for a bridge that just wants the text. */
+function wsjtxString(str) {
+  const b = new TextEncoder().encode(str);
+  const out = new Uint8Array(4 + b.length);
+  new DataView(out.buffer).setUint32(0, b.length, false);
+  out.set(b, 4);
+  return out;
+}
+function wsjtxLoggedAdif(adifText, id) {
+  const head = new Uint8Array(12);
+  const v = new DataView(head.buffer);
+  v.setUint32(0, 0xADBCCBDA, false);     // magic
+  v.setUint32(4, 2, false);              // schema
+  v.setUint32(8, 12, false);             // type 12 = Logged ADIF
+  const parts = [head, wsjtxString(id), wsjtxString(adifText)];
+  const len = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(len);
+  let at = 0;
+  parts.forEach(pp => { out.set(pp, at); at += pp.length; });
+  return out;
+}
+
+/* A whole ADIF document, header and all, which is what WSJT-X puts in a
+   type 12 and what a bridge reading raw text expects to parse. */
+function sendAdifDoc(entry) {
+  const grid = ($('grid-input') && $('grid-input').value.trim()) || '';
+  return '<adif_ver:5>3.1.0\n<programid:7>TavaOne\n<EOH>\n'
+       + buildAdifRecord(entry, grid) + '\n';
+}
+
+function sendPayload(entry) {
+  const doc = sendAdifDoc(entry);
+  return sendFmt === 'adif' ? new TextEncoder().encode(doc)
+                            : wsjtxLoggedAdif(doc, 'TavaOne');
+}
+
+function sendEndpoint() {
+  const base = (sendUrl || SEND_URL_DFLT).replace(/\/+$/, '');
+  const port = String(sendPort || '').trim();
+  return base + '/send' + (port ? '?port=' + encodeURIComponent(port) : '');
+}
+
+/* ─── The queue ───
+   A QSO is logged whether or not the shack can be reached — the log in the
+   browser is the record, and this is a copy going somewhere else. So a
+   failed send never blocks or loses anything: it waits in a queue that
+   outlives a refresh and goes out when the shim answers again. */
+function sendQueueLoad() {
+  try { sendQueue = JSON.parse(localStorage.getItem(SEND_Q_KEY) || '[]') || []; }
+  catch (e) { sendQueue = []; }
+}
+function sendQueueSave() {
+  try { localStorage.setItem(SEND_Q_KEY, JSON.stringify(sendQueue.slice(0, 2000))); }
+  catch (e) {}
+}
+function sendDoneLoad() {
+  try { sendDone = new Set(JSON.parse(localStorage.getItem(SEND_DONE_KEY) || '[]')); }
+  catch (e) { sendDone = new Set(); }
+}
+function sendDoneSave() {
+  /* Keep the most recent few thousand; older ones cannot be re-sent by
+     accident because they are no longer in any session being looked at. */
+  try { localStorage.setItem(SEND_DONE_KEY, JSON.stringify([...sendDone].slice(-5000))); }
+  catch (e) {}
+}
+
+/* Returns false when there was nothing to do, so a caller can count. */
+function sendQso(entry) {
+  if (!sendOn) return false;
+  const key = qsoKey(entry);
+  if (sendDone.has(key)) return false;
+  if (sendQueue.some(j => j.key === key)) return false;
+  sendQueue.push({ at: Date.now(), key, entry });
+  sendQueueSave();
+  paintSend();
+  sendFlush();
+  return true;
+}
+
+/* The explicit one: everything in the session being viewed that has not
+   already gone. This is how contacts logged on a phone reach the shack —
+   they are merged in from a backup, which does not go through the logging
+   path, and then sent from here on purpose rather than automatically. */
+function sendSession() {
+  if (!sendOn) { toast('Turn on Send QSOs to the shack first', 'wrn'); return; }
+  const view = visibleLog();
+  if (!view.length) { toast('Nothing in this session to send', 'wrn'); return; }
+  /* Oldest first, so they arrive in the order they were made. */
+  let queued = 0;
+  [...view].reverse().forEach(e => { if (sendQso(e)) queued++; });
+  const already = view.length - queued;
+  if (!queued) toast(`All ${view.length} already sent`, 'ok');
+  else toast(`Sending ${queued}${already ? `, ${already} already sent` : ''}`, 'ok');
+}
+
+async function sendFlush() {
+  if (sendBusy || !sendOn || !sendQueue.length) return;
+  sendBusy = true;
+  clearTimeout(sendTimer);
+  try {
+    while (sendQueue.length) {
+      const job = sendQueue[0];
+      const body = sendPayload(job.entry);
+      const r = await fetch(sendEndpoint(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body
+      });
+      if (!r.ok) throw new Error('shim said ' + r.status);
+      sendQueue.shift();
+      if (job.key) sendDone.add(job.key);
+      sendQueueSave();
+      sendDoneSave();
+      sendFails = 0;
+      paintSend();
+      if (sendQueue.length) await new Promise(r2 => setTimeout(r2, SEND_GAP));
+    }
+    setSendStatus('ok', 'Sent');
+  } catch (e) {
+    sendFails++;
+    /* Back off rather than hammer a shim that is not running: 2s, 4s, 8s,
+       up to a minute. Logging carries on regardless. */
+    const wait = Math.min(60000, 2000 * Math.pow(2, Math.min(sendFails, 5)));
+    setSendStatus('err', `${sendQueue.length} waiting — retrying`);
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(() => { sendBusy = false; sendFlush(); }, wait);
+    sendBusy = false;
+    paintSend();
+    return;
+  }
+  sendBusy = false;
+  paintSend();
+}
+
+async function sendTest() {
+  setSendStatus('busy', 'Testing...');
+  try {
+    const base = (sendUrl || SEND_URL_DFLT).replace(/\/+$/, '');
+    const r = await fetch(base + '/health');
+    const j = await r.json();
+    if (!j || !j.ok) throw new Error('unexpected answer');
+    setSendStatus('ok', `Shim up — UDP ${j.udpHost}:${sendPort || j.udpPort}`);
+    toast('Shim answered — QSOs will go out as you log them', 'ok');
+  } catch (e) {
+    setSendStatus('err', 'No answer');
+    toast('No answer from the shim. Is it running on this machine?', 'err');
+  }
+}
+
+function setSendStatus(state, txt) {
+  const dot = $('send-dot');
+  if (dot) dot.className = 'udp-dot ' + (state === 'ok' ? 'ok' : state === 'err' ? 'err'
+                                       : state === 'busy' ? 'busy' : 'off');
+  const r = $('send-readout');
+  if (r && txt) r.textContent = txt;
+}
+
+function setSendOn(on) {
+  sendOn = !!on;
+  try { localStorage.setItem(SEND_ON_KEY, sendOn ? '1' : '0'); } catch (e) {}
+  paintSend();
+  if (sendOn) sendFlush(); else { clearTimeout(sendTimer); setSendStatus('off', 'Off'); }
+}
+function setSendUrl(v) {
+  sendUrl = (v || '').trim() || SEND_URL_DFLT;
+  try { localStorage.setItem(SEND_URL_KEY, sendUrl); } catch (e) {}
+}
+function setSendPort(v) {
+  const t = (v || '').trim();
+  sendPort = /^\d{1,5}$/.test(t) ? t : '';
+  try { localStorage.setItem(SEND_PORT_KEY, sendPort); } catch (e) {}
+}
+function setSendFmt(v) {
+  sendFmt = SEND_FORMATS.indexOf(v) === -1 ? 'wsjtx' : v;
+  try { localStorage.setItem(SEND_FMT_KEY, sendFmt); } catch (e) {}
+}
+
+function paintSend() {
+  const btn = $('send-toggle');
+  if (btn) {
+    btn.classList.toggle('on', sendOn);
+    btn.textContent = 'SEND TO SHACK: ' + (sendOn ? 'ON' : 'OFF');
+  }
+  const body = $('send-body');
+  if (body) body.style.display = sendOn ? '' : 'none';
+  const q = $('send-queue');
+  if (q) q.textContent = sendQueue.length ? `${sendQueue.length} waiting to send` : '';
+  const sb = $('send-session-btn');
+  if (sb) sb.style.display = sendOn ? '' : 'none';
+}
+
+function sendInit() {
+  sendQueueLoad();
+  sendDoneLoad();
+  try {
+    sendOn  = localStorage.getItem(SEND_ON_KEY) === '1';
+    sendUrl = localStorage.getItem(SEND_URL_KEY) || SEND_URL_DFLT;
+    sendPort = localStorage.getItem(SEND_PORT_KEY) || '';
+    const f = localStorage.getItem(SEND_FMT_KEY);
+    if (SEND_FORMATS.indexOf(f) !== -1) sendFmt = f;
+  } catch (e) {}
+  if ($('send-url'))  $('send-url').value  = sendUrl;
+  if ($('send-port')) $('send-port').value = sendPort;
+  if ($('send-fmt'))  $('send-fmt').value  = sendFmt;
+  setSendStatus(sendOn ? 'off' : 'off', sendOn ? (sendQueue.length ? `${sendQueue.length} waiting` : 'On') : 'Off');
+  paintSend();
+  if (sendOn && sendQueue.length) sendFlush();
 }
 
 /* ═══════════════════════════════════════════════════
@@ -5096,7 +5404,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-28';
+const APP_BUILD = '2026-11-11-30';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -5199,6 +5507,7 @@ paintPin();
      inherit a raised line from the build that used to raise one. */
   rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
   migrateRigParams();
+  sendInit();
   try {
     const k = JSON.parse(localStorage.getItem(PTT_KEY_KEY) || 'null');
     if (k && k.code) pttHotkey = k;
