@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-11-32",
-  "notes": "Send the WSJT-X QSO Logged packet too; fix the shim preflight refusing GET"
+  "build": "2026-11-12-33",
+  "notes": "Fix: a PTT key with a modifier did not unkey on release"
 }
