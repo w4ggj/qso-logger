@@ -4163,7 +4163,13 @@ document.addEventListener('keydown', e => {
 
 document.addEventListener('keyup', e => {
   if (pttCapturing) return;
-  if (pttMode === 'hold' && pttOn && pttKeyMatches(e, pttHotkey)) {
+  /* The key alone decides a release @M@ NOT the modifiers with it. Letting go
+     of Ctrl+F8 usually lifts Ctrl a moment before F8, so the key-up for F8
+     arrives with ctrlKey already false. Requiring the modifiers to still
+     match would discard that release and leave the radio transmitting with
+     nothing left to stop it but the dead-man timer. Pressing takes the whole
+     combination; releasing takes only the key. */
+  if (pttMode === 'hold' && pttOn && pttHotkey && e.code === pttHotkey.code) {
     e.preventDefault();
     pttSet(false, 'key released');
   }
@@ -5485,7 +5491,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-11-32';
+const APP_BUILD = '2026-11-12-33';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

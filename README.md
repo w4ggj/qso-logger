@@ -318,8 +318,12 @@ The control appears in the rig panel once a radio is connected, and offers:
 - A **key you assign**. Press the button, then press the key. A function key is
   the one to pick: it keys without typing anything. Whatever is assigned is
   swallowed while it is held, so a printable key does not also land in the
-  field you are typing in. Modifiers count — `Ctrl+F9` does not fire on a bare
-  `F9`.
+  field you are typing in. Modifiers count on the way down — `Ctrl+F9` does not
+  fire on a bare `F9` — but **not on the way up**: a hand, and a footpedal's
+  firmware, let go of the modifier a moment before the key, so the key-up for
+  `F9` arrives with `ctrlKey` already false. Requiring the modifiers to still
+  match there would discard the release and leave the radio transmitting.
+  Pressing takes the whole combination; releasing takes only the key.
 - A **time limit** (30 s to 10 minutes). A transmit that runs past it is cut
   off. This is the dead-man switch for a key that sticks or a browser that
   stops delivering `keyup`.
