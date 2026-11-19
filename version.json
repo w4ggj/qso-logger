@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-34",
-  "notes": "Live rig telemetry to the shack on voice modes, as a WSJT-X Status packet"
+  "build": "2026-11-19-35",
+  "notes": "Telemetry announces itself as TavaOne; data modes are now a choice"
 }
