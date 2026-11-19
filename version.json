@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-37",
-  "notes": "Licence class is a dropdown, and warns when the dial leaves your US privileges"
+  "build": "2026-11-19-38",
+  "notes": "Where phone runs in a data mode, the dial decides whether it is phone or digital"
 }
