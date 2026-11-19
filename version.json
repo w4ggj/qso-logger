@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-36",
-  "notes": "Telemetry reports a data mode as its plain sideband, so SSB is not filed as digital"
+  "build": "2026-11-19-37",
+  "notes": "Licence class is a dropdown, and warns when the dial leaves your US privileges"
 }

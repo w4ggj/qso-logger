@@ -679,6 +679,16 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 /* Four across on a phone, which puts the four sidebands on the first row and
    the rest on the second; one row of eight once there is width for it. A grid
    rather than wrapping flex, so a short last row does not stretch to fill. */
+.priv-note {
+  margin-top: 6px; padding: 7px 10px; border-radius: var(--r);
+  font-family: var(--ui); font-size: 0.64rem; line-height: 1.5;
+  border: 1px solid var(--border2); background: var(--bg3); color: var(--muted);
+}
+.priv-note.bad  { border-color: var(--red);   color: var(--red); }
+.priv-note.warn { border-color: var(--amber); color: var(--amber); }
+input.priv-bad  { border-color: var(--red)   !important; color: var(--red)   !important; }
+input.priv-warn { border-color: var(--amber) !important; }
+
 .rig-modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 @media (min-width: 1024px) { .rig-modes { grid-template-columns: repeat(8, 1fr); } }
 .mode-btn {
@@ -1140,6 +1150,7 @@ footer {
           <input type="text" id="inp-freq" placeholder="14.225" inputmode="decimal"
             oninput="autoDetectBand(this.value)"
             title="Click the field, then scroll the mouse wheel (or press ↑/↓) to step the frequency — Shift = 100 Hz, Alt = 10 kHz. With the rig connected this tunes the radio.">
+          <div class="priv-note" id="priv-note" style="display:none"></div>
         </div>
         <div class="field">
           <label>Band</label>
@@ -1180,7 +1191,7 @@ footer {
       <div class="row1">
         <div class="field">
           <label>Mode <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(what goes in the log)</span></label>
-          <select id="inp-mode">
+          <select id="inp-mode" onchange="paintPriv()">
             <option value="">— Mode —</option>
             <option>SSB</option><option>CW</option><option>FM</option>
             <option>AM</option><option>FT8</option><option>FT4</option>
@@ -1243,7 +1254,20 @@ footer {
         <div class="grid-row">
           <label>CLASS</label>
           <input type="text" id="station-class" maxlength="20" placeholder="General, Extra, Foundation..."
-            oninput="saveStation()" title="Your licence class, shown in the header strip">
+            oninput="saveStation()" title="Your licence class, shown in the header strip. Any text — Foundation, Full, VK Advanced.">
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <label>Privilege check <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(United States only)</span></label>
+          <select id="priv-class" onchange="setPrivClass(this.value)"
+            title="Warns when the dial leaves what this class may use for the mode you are logging. US band plan only."></select>
+          <div class="udp-help send-help" style="margin-top:6px">
+            Warns when the dial leaves what your class may use for the mode in the log, and
+            flags an SSB signal whose sidebands reach past a segment edge. Segments are from
+            the ARRL chart; <strong>47 CFR 97.301 and 97.305 are the rule</strong>, and you are
+            responsible for your own transmissions. Continental US is assumed, and 60 m gets a
+            note rather than a verdict. Leave it on <em>No privilege check</em> anywhere else.
+          </div>
         </div>
 
         <div style="margin-top:14px;">
@@ -1757,6 +1781,10 @@ function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); bkTouc
    the parts that have been set, so a brand-new operator sees an empty strip
    rather than someone else's QTH. */
 const QTH_KEY = 'w4ggj_qth', CLASS_KEY = 'w4ggj_class';
+/* Separate from CLASS_KEY on purpose. CLASS_KEY is a label for the header and
+   can say Foundation or VK Advanced; this one selects a body of United States
+   regulation to check against, and most of the world's operators have none. */
+const PRIV_KEY = 'w4ggj_priv_class';
 const getQth   = () => { try { return localStorage.getItem(QTH_KEY)   || ''; } catch (e) { return ''; } };
 const getClass = () => { try { return localStorage.getItem(CLASS_KEY) || ''; } catch (e) { return ''; } };
 
@@ -1776,7 +1804,9 @@ function paintStation() {
     const parts = [
       ['QTH: ',   getQth().toUpperCase(), null],
       ['GRID: ',  (localStorage.getItem('w4ggj_grid') || '').toUpperCase(), 'hdr-grid'],
-      ['CLASS: ', getClass().toUpperCase(), null],
+      /* The typed label wins; a US operator who only picked a class for the
+         privilege check gets it shown here rather than having to type it. */
+      ['CLASS: ', (getClass() || (getPrivClass() ? classLabel(getPrivClass()) : '')).toUpperCase(), null],
     ].filter(x => x[1]);
     meta.textContent = '';
     parts.forEach(([label, value, id], i) => {
@@ -2044,6 +2074,215 @@ function autoDetectBand(v) {
   const m = BAND_MAP.find(([lo, hi]) => f >= lo && f <= hi);
   if (m) $('inp-band').value = m[2];
   markActiveBand();
+  paintPriv();
+}
+
+
+/* ═══════════════════════════════════════════════════
+   US LICENCE PRIVILEGES
+
+   Warns when the dial sits outside what the operator's class may use for
+   the mode they are in. Off unless a class is chosen, because this is
+   **United States** regulation and nothing else: a warning aimed at the
+   wrong country is worse than no warning.
+
+   Segments from the ARRL frequency allocations chart (updated 14 April
+   2022), which is a secondary source. 47 CFR 97.301 and 97.305 are the
+   rule. The operator is responsible for their own transmissions; this
+   catches an obvious mistake, it is not a licence to stop thinking.
+
+   Continental US assumed. The 40 m plan carries footnotes for ITU
+   Regions 1 and 3, and for Region 2 west of 130 W or south of 20 N,
+   which are not applied here.
+   ═══════════════════════════════════════════════════ */
+const CLASSES = [
+  { id: '',          label: 'No privilege check' },
+  { id: 'novice',    label: 'Novice' },
+  { id: 'tech',      label: 'Technician' },
+  { id: 'general',   label: 'General' },
+  { id: 'advanced',  label: 'Advanced' },
+  { id: 'extra',     label: 'Amateur Extra' }
+];
+
+/* Each entry: [low MHz, high MHz, emissions]. 'p' phone and image,
+   'c' CW, 'd' RTTY and data. A band absent for a class means no
+   privileges there at all. */
+const PRIVS = {
+  novice: [
+    [3.525, 3.600, 'c'], [7.025, 7.125, 'c'], [21.025, 21.200, 'c'],
+    [28.000, 28.300, 'cd'], [28.300, 28.500, 'cp'],
+    [222.00, 225.00, 'cpd']
+  ],
+  tech: [
+    [3.525, 3.600, 'c'], [7.025, 7.125, 'c'], [21.025, 21.200, 'c'],
+    [28.000, 28.300, 'cd'], [28.300, 28.500, 'cp'],
+    [50.0, 50.1, 'c'], [50.1, 54.0, 'cpd'],
+    [144.0, 144.1, 'c'], [144.1, 148.0, 'cpd'],
+    [222.00, 225.00, 'cpd'], [420.0, 450.0, 'cpd']
+  ],
+  general: [
+    [1.800, 2.000, 'cpd'],
+    [3.525, 3.600, 'cd'], [3.800, 4.000, 'cp'],
+    [7.025, 7.125, 'cd'], [7.175, 7.300, 'cp'],
+    [10.100, 10.150, 'cd'],
+    [14.025, 14.150, 'cd'], [14.225, 14.350, 'cp'],
+    [18.068, 18.110, 'cd'], [18.110, 18.168, 'cp'],
+    [21.025, 21.200, 'cd'], [21.275, 21.450, 'cp'],
+    [24.890, 24.930, 'cd'], [24.930, 24.990, 'cp'],
+    [28.000, 28.300, 'cd'], [28.300, 29.700, 'cp'],
+    [50.0, 50.1, 'c'], [50.1, 54.0, 'cpd'],
+    [144.0, 144.1, 'c'], [144.1, 148.0, 'cpd'],
+    [222.00, 225.00, 'cpd'], [420.0, 450.0, 'cpd']
+  ],
+  advanced: [
+    [1.800, 2.000, 'cpd'],
+    [3.525, 3.600, 'cd'], [3.700, 4.000, 'cp'],
+    [7.025, 7.125, 'cd'], [7.125, 7.300, 'cp'],
+    [10.100, 10.150, 'cd'],
+    [14.025, 14.150, 'cd'], [14.175, 14.350, 'cp'],
+    [18.068, 18.110, 'cd'], [18.110, 18.168, 'cp'],
+    [21.025, 21.200, 'cd'], [21.225, 21.450, 'cp'],
+    [24.890, 24.930, 'cd'], [24.930, 24.990, 'cp'],
+    [28.000, 28.300, 'cd'], [28.300, 29.700, 'cp'],
+    [50.0, 50.1, 'c'], [50.1, 54.0, 'cpd'],
+    [144.0, 144.1, 'c'], [144.1, 148.0, 'cpd'],
+    [222.00, 225.00, 'cpd'], [420.0, 450.0, 'cpd']
+  ],
+  extra: [
+    [1.800, 2.000, 'cpd'],
+    [3.500, 3.600, 'cd'], [3.600, 4.000, 'cp'],
+    [7.000, 7.125, 'cd'], [7.125, 7.300, 'cp'],
+    [10.100, 10.150, 'cd'],
+    [14.000, 14.150, 'cd'], [14.150, 14.350, 'cp'],
+    [18.068, 18.110, 'cd'], [18.110, 18.168, 'cp'],
+    [21.000, 21.200, 'cd'], [21.200, 21.450, 'cp'],
+    [24.890, 24.930, 'cd'], [24.930, 24.990, 'cp'],
+    [28.000, 28.300, 'cd'], [28.300, 29.700, 'cp'],
+    [50.0, 50.1, 'c'], [50.1, 54.0, 'cpd'],
+    [144.0, 144.1, 'c'], [144.1, 148.0, 'cpd'],
+    [222.00, 225.00, 'cpd'], [420.0, 450.0, 'cpd']
+  ]
+};
+
+/* 60 m is five channels with its own rules, and the published guidance
+   contradicts itself on the carrier offset. Say so rather than rule on it. */
+const SIXTY = [5.3305, 5.3465, 5.3515, 5.3665, 5.3715, 5.4035];
+const inSixty = mhz => mhz >= 5.3305 - 0.003 && mhz <= 5.4035 + 0.003;
+
+/* Which kind of emission the log's Mode is. */
+const MODE_EMISSION = {
+  SSB: 'p', AM: 'p', FM: 'p',
+  CW: 'c',
+  FT8: 'd', FT4: 'd', PSK31: 'd', RTTY: 'd', JS8: 'd',
+  'D-STAR': 'p', DMR: 'p'
+};
+/* Falls back to the radio's own mode when the log field is empty. */
+function currentEmission() {
+  const logged = ($('inp-mode') && $('inp-mode').value) || '';
+  if (MODE_EMISSION[logged]) return MODE_EMISSION[logged];
+  const rig = (rigModeLabel || '').toUpperCase();
+  if (!rig) return '';
+  if (/^(USB|LSB|AM|FM)/.test(rig) && !/-D$|DATA/.test(rig)) return 'p';
+  if (/^CW/.test(rig)) return 'c';
+  if (/RTTY|DATA|-D$/.test(rig)) return 'd';
+  return '';
+}
+
+/* An SSB signal is about 3 kHz wide and sits to one side of the dial, so a
+   carrier legally inside a segment can still push its sidebands out. Which
+   side depends on the sideband in use. */
+const SSB_WIDTH = 0.003;
+function emissionSpan(mhz, emission) {
+  if (emission !== 'p') return [mhz, mhz];
+  const rig = (rigModeLabel || '').toUpperCase();
+  if (rig.startsWith('LSB')) return [mhz - SSB_WIDTH, mhz];
+  if (rig.startsWith('USB')) return [mhz, mhz + SSB_WIDTH];
+  return [mhz, mhz];                     // AM, FM, or no rig: judge the dial
+}
+
+function getPrivClass() {
+  let v = '';
+  try { v = localStorage.getItem(PRIV_KEY) || ''; } catch (e) {}
+  return CLASSES.some(c => c.id && c.id === v) ? v : '';
+}
+function setPrivClass(v) {
+  try { localStorage.setItem(PRIV_KEY, v || ''); } catch (e) {}
+  paintPriv();
+  paintStation();
+}
+
+/* Returns null when there is nothing to say, else { level, text }. */
+function privCheck(mhz) {
+  const cls = getPrivClass();
+  if (!cls || !isFinite(mhz) || mhz <= 0) return null;
+
+  if (inSixty(mhz)) {
+    return { level: 'note',
+             text: '60 m is five fixed channels with their own rules — check the channel and bandwidth yourself' };
+  }
+
+  /* What counts as an amateur allocation comes from the table itself rather
+     than from the logger's band list: Extra holds every band, and the band
+     list leaves out 1.25 m, which the logger cannot name but the operator
+     may well be on. One source, and it cannot drift. */
+  const inBand = PRIVS.extra.some(([lo, hi]) => mhz >= lo && mhz <= hi);
+  if (!inBand) return { level: 'bad', text: 'Outside the amateur bands' };
+
+  const segs = PRIVS[cls] || [];
+  const emission = currentEmission();
+  const here = segs.filter(([lo, hi]) => mhz >= lo && mhz <= hi);
+
+  if (!here.length) {
+    return { level: 'bad',
+             text: `Outside your privileges — ${classLabel(cls)} has nothing here` };
+  }
+  if (!emission) return null;            // mode unknown: do not guess
+
+  const allowed = here.some(([, , em]) => em.indexOf(emission) !== -1);
+  if (!allowed) {
+    const name = emission === 'p' ? 'Phone' : emission === 'c' ? 'CW' : 'Data';
+    return { level: 'bad',
+             text: `${name} not permitted here for ${classLabel(cls)}` };
+  }
+
+  /* Legal on the dial — but does the whole signal fit? */
+  const [lo, hi] = emissionSpan(mhz, emission);
+  const fits = segs.some(([sl, sh, em]) =>
+    em.indexOf(emission) !== -1 && lo >= sl && hi <= sh);
+  if (!fits) {
+    return { level: 'warn',
+             text: 'Your sidebands reach past the edge — move further in' };
+  }
+  return null;
+}
+
+/* One source for the list, so the menu cannot drift from the table that
+   decides what is legal. */
+function buildClassOptions() {
+  const sel = $('priv-class');
+  if (!sel || sel.options.length) return;
+  CLASSES.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id; o.textContent = c.label;
+    sel.appendChild(o);
+  });
+  sel.value = getPrivClass();
+}
+
+function classLabel(id) {
+  const c = CLASSES.find(x => x.id === id);
+  return c ? c.label : id;
+}
+
+function paintPriv() {
+  const box = $('priv-note'), fld = $('inp-freq');
+  if (!box || !fld) return;
+  const r = privCheck(parseFloat(fld.value));
+  fld.classList.toggle('priv-bad',  !!r && r.level === 'bad');
+  fld.classList.toggle('priv-warn', !!r && r.level === 'warn');
+  box.className = 'priv-note' + (r ? ' ' + r.level : '');
+  box.textContent = r ? r.text : '';
+  box.style.display = r ? '' : 'none';
 }
 
 /* ─── Wheel / Arrow-key Frequency Tuning ───
@@ -5523,6 +5762,7 @@ function rigSetFreq(hz) {
   rigLastHz = hz;
   paintRigReadout();
   if (moved) telPoke();
+  paintPriv();
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
@@ -5707,7 +5947,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-36';
+const APP_BUILD = '2026-11-19-37';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -5811,6 +6051,8 @@ paintPin();
   rigRaiseDtr = localStorage.getItem(RIG_DTR_KEY) === '1';
   migrateRigParams();
   sendInit();
+  buildClassOptions();
+  paintPriv();
   try {
     const k = JSON.parse(localStorage.getItem(PTT_KEY_KEY) || 'null');
     if (k && k.code) pttHotkey = k;
