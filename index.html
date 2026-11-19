@@ -903,6 +903,9 @@ footer {
 .ft-brand { font-family: var(--head); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.02em; }
 .ft-copy { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
 .ft-info { font-size: 0.58rem; color: var(--muted); letter-spacing: 0.08em; }
+.ft-info a { color: var(--green); text-decoration: none; }
+.ft-info a:hover { text-decoration: underline; }
+.ft-info a:focus-visible { outline: 1px solid var(--green); outline-offset: 2px; }
 .ft-build { font-family: var(--mono); font-size: 0.58rem; color: var(--muted); letter-spacing: 0.06em; }
 .ft-build.stale { color: var(--amber); }
 
@@ -1698,7 +1701,7 @@ footer {
 
   </div></div><footer>
   <div class="ft-brand"><span class="brand-white">Tava</span><span class="brand-green">One</span> <span class="brand-slash">//</span> <span class="brand-green">QSO Logger</span></div>
-  <div class="ft-info">All times UTC &nbsp;·&nbsp; Log stored locally &nbsp;·&nbsp; PWA offline-capable</div>
+  <div class="ft-info">All times UTC &nbsp;·&nbsp; Log stored locally &nbsp;·&nbsp; PWA offline-capable &nbsp;·&nbsp; <a href="features.html">Features</a></div>
   <div class="ft-build" id="ft-build" title="Build loaded in this tab">BUILD &mdash;</div>
   <div class="ft-copy">&copy; 2026 Tava One, LLC</div>
 </footer>
@@ -5978,7 +5981,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-38';
+const APP_BUILD = '2026-11-19-39';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
