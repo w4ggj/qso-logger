@@ -1388,11 +1388,21 @@ footer {
               <button class="btn btn-outline udp-toggle" id="tel-on"
                 onclick="setTelOn(!telOn)" style="flex:1">TELEMETRY: ON</button>
             </div>
+            <div class="udp-row" id="tel-data-row">
+              <button class="btn btn-outline udp-toggle" id="tel-data"
+                onclick="setTelOnData(!telOnData)" style="flex:1">ON DATA MODES: NO</button>
+            </div>
             <div class="udp-help send-help">
               Sends frequency, mode and transmit to the shack as you operate, so a dashboard
               that already follows WSJT-X on digital follows the dial on phone too.
-              <strong>Not sent on data modes</strong> &mdash; there WSJT-X is running and
-              reporting over this same path, and two senders would fight over the frequency.
+              Telemetry announces itself as <code>TavaOne</code>, not as WSJT-X, so a receiver
+              can tell the two apart; logged contacts still go as WSJT-X and are never filtered.
+              <br><br>
+              <strong>On data modes</strong> is normally <strong>NO</strong>: there WSJT-X is
+              running and reporting over this same path, and a shack that cannot tell two
+              senders apart would see them fight. Say YES only if your shack prefers the real
+              WSJT-X when both are reporting &mdash; needed if your radio takes transmit audio
+              over USB, which means operating phone in a data mode too.
             </div>
             <div class="udp-help send-help" id="send-queue"
               style="color:var(--amber);display:none"></div>
@@ -3671,11 +3681,17 @@ const SEND_GAP = 25;
    over the frequency and flap the transmit flag, and the receiver cannot tell
    them apart — it keys on the WSJT-X magic, not on who sent it. Knowing the
    mode is enough to stay out of the way, with no need to detect WSJT-X. */
-const TEL_ON_KEY  = 'w4ggj_tel_on';
+const TEL_ON_KEY   = 'w4ggj_tel_on';
+const TEL_DATA_KEY = 'w4ggj_tel_data';
 const TEL_BEAT    = 1500;   // ms between packets when nothing is changing
 const TEL_MIN_GAP = 200;    // ms floor, so spinning the dial cannot flood
 
 let telOn = true;
+/* Off by default, because the safe assumption about an unknown shack is that
+   it cannot tell two senders apart. A station that routes transmit audio over
+   USB operates phone in a data mode and needs this on; it is correct there
+   only because the receiving end prefers the real WSJT-X by program id. */
+let telOnData = false;
 let telBeatTimer = null, telSoonTimer = null, telLastAt = 0;
 
 /* A data mode is anything the radio labels as one: USB-D and LSB-D on an
@@ -3685,7 +3701,8 @@ function rigIsDataMode() {
 }
 
 function telActive() {
-  return !!(sendOn && telOn && rigConnected && rigLastHz && rigModeLabel && !rigIsDataMode());
+  if (!(sendOn && telOn && rigConnected && rigLastHz && rigModeLabel)) return false;
+  return telOnData || !rigIsDataMode();
 }
 
 function telFields() {
@@ -3742,11 +3759,25 @@ function setTelOn(on) {
   paintTel();
 }
 
+function setTelOnData(on) {
+  telOnData = !!on;
+  try { localStorage.setItem(TEL_DATA_KEY, telOnData ? '1' : '0'); } catch (e) {}
+  telPoke();
+  paintTel();
+}
+
 function paintTel() {
   const b = $('tel-on');
-  if (!b) return;
-  b.classList.toggle('on', telOn);
-  b.textContent = 'TELEMETRY: ' + (telOn ? 'ON' : 'OFF');
+  if (b) {
+    b.classList.toggle('on', telOn);
+    b.textContent = 'TELEMETRY: ' + (telOn ? 'ON' : 'OFF');
+  }
+  const d = $('tel-data'), row = $('tel-data-row');
+  if (row) row.style.display = telOn ? '' : 'none';
+  if (d) {
+    d.classList.toggle('on', telOnData);
+    d.textContent = 'ON DATA MODES: ' + (telOnData ? 'YES' : 'NO');
+  }
 }
 
 /* ─── The WSJT-X UDP protocol ───
@@ -3762,11 +3793,19 @@ function paintTel() {
    here — an absent field is sent as empty, which is what WSJT-X does. */
 const WSJTX_MAGIC  = 0xADBCCBDA;
 const WSJTX_SCHEMA = 3;
-/* The id names the sending program. It is "WSJT-X" rather than this app's
-   own name on purpose: receivers key on it, and a logger that announced
-   itself as something else would be filtered out by a shack set up for
-   WSJT-X. */
+/* The id names the sending program, and the two kinds of packet want
+   different answers.
+
+   A logged QSO says WSJT-X, because a shack set up for WSJT-X keys on that
+   name and a contact must never be filtered out.
+
+   Telemetry says TavaOne, so a receiver can tell this logger from the real
+   WSJT-X and prefer WSJT-X when both are reporting the same radio. Mode
+   alone cannot separate them — a station that routes its transmit audio over
+   USB sits in a data mode for phone as well as for digital — so the only
+   honest way to yield is to be identifiable. */
 const WSJTX_ID = 'WSJT-X';
+const TEL_ID   = 'TavaOne';
 
 function wsjtxString(str) {
   const b = new TextEncoder().encode(str == null ? '' : String(str));
@@ -3800,12 +3839,12 @@ function wsjtxJoin(parts) {
   return out;
 }
 
-function wsjtxHeader(mtype) {
+function wsjtxHeader(mtype, id) {
   const head = new Uint8Array(12), v = new DataView(head.buffer);
   v.setUint32(0, WSJTX_MAGIC, false);
   v.setUint32(4, WSJTX_SCHEMA, false);
   v.setUint32(8, mtype, false);
-  return wsjtxJoin([head, wsjtxString(WSJTX_ID)]);
+  return wsjtxJoin([head, wsjtxString(id || WSJTX_ID)]);
 }
 
 /* Type 5, in the order the protocol lays the fields out. The log has one
@@ -3851,7 +3890,7 @@ function wsjtxU64(n) {
    shorten the packet, it shifts everything after it into the wrong place. */
 function wsjtxStatus(f) {
   return wsjtxJoin([
-    wsjtxHeader(1),
+    wsjtxHeader(1, TEL_ID),
     wsjtxU64(f.dialHz),                                  // dial frequency, Hz
     wsjtxString(f.mode),
     wsjtxString(f.dxCall), wsjtxString(f.report),
@@ -4075,6 +4114,7 @@ function sendInit() {
     const f = localStorage.getItem(SEND_FMT_KEY);
     if (SEND_FORMATS.indexOf(f) !== -1) sendFmt = f;
     telOn = localStorage.getItem(TEL_ON_KEY) !== '0';
+    telOnData = localStorage.getItem(TEL_DATA_KEY) === '1';
   } catch (e) {}
   if ($('send-url'))  $('send-url').value  = sendUrl;
   if ($('send-port')) $('send-port').value = sendPort;
@@ -5647,7 +5687,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-34';
+const APP_BUILD = '2026-11-19-35';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

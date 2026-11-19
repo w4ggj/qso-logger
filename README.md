@@ -557,11 +557,24 @@ end does not time the radio out. A floor of 200 ms between packets means
 spinning the dial cannot flood the link. Transmit changes are never held back
 for a heartbeat.
 
-**Not sent on data modes.** On USB-D or DATA-U, WSJT-X itself is running and
-sending its own Status over this very path. A receiver keys on the WSJT-X
-magic, not on who sent it, so two senders would fight over the frequency and
-flap the transmit flag. Knowing the mode is enough to stay out of the way —
-no need to detect WSJT-X at all.
+**Telemetry announces itself as `TavaOne`, not as WSJT-X.** A logged QSO still
+says `WSJT-X`, because a shack keyed to that name must never filter a contact
+out; but telemetry is the thing that may need to yield, so it has to be
+identifiable. A receiver that prefers the real WSJT-X when both are reporting
+the same radio can then do so, and say which source it is believing.
+
+**On data modes is a choice, and the default is no.** There WSJT-X is running
+and reporting over this same path, and a shack that cannot tell two senders
+apart would see them fight over the frequency and flap the transmit flag. The
+safe assumption about an unknown shack is that it cannot, so by default the
+logger simply stays quiet there.
+
+Say yes only where the receiving end prefers the real WSJT-X by program id.
+That is not an edge case: a radio that takes its transmit audio over USB — an
+IC-7300 with `DATA OFF MOD` left on the microphone, say — must be in a data
+mode to be heard at all, so it operates **phone** in a data mode too. For such
+a station the mode says nothing about whether WSJT-X is running, and yielding
+by name is the only honest way to do it.
 
 Telemetry is a statement about *now*, so a packet that cannot be sent is
 **dropped, not queued**: a stale one is worse than none, and the QSO queue must
