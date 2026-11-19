@@ -2169,6 +2169,22 @@ const PRIVS = {
 const SIXTY = [5.3305, 5.3465, 5.3515, 5.3665, 5.3715, 5.4035];
 const inSixty = mhz => mhz >= 5.3305 - 0.003 && mhz <= 5.4035 + 0.003;
 
+/* The phone portion of each band, taken from the most generous class, as a
+   definition of "a voice frequency" that does not depend on the operator
+   holding any particular licence. */
+function inPhoneSegment(mhz) {
+  return PRIVS.extra.some(([lo, hi, em]) =>
+    em.indexOf('p') !== -1 && mhz >= lo && mhz <= hi);
+}
+
+/* A station that routes its transmit audio over USB sits in a data mode for
+   phone as much as for digital, and the mode alone cannot tell them apart.
+   Where the operator has said that is their setup, the dial decides: a data
+   mode on a phone frequency is phone, and on 14.074 it is still data. */
+function dataModeMeansVoice(mhz) {
+  return !!telOnData && isFinite(mhz) && inPhoneSegment(mhz);
+}
+
 /* Which kind of emission the log's Mode is. */
 const MODE_EMISSION = {
   SSB: 'p', AM: 'p', FM: 'p',
@@ -2177,14 +2193,14 @@ const MODE_EMISSION = {
   'D-STAR': 'p', DMR: 'p'
 };
 /* Falls back to the radio's own mode when the log field is empty. */
-function currentEmission() {
+function currentEmission(mhz) {
   const logged = ($('inp-mode') && $('inp-mode').value) || '';
   if (MODE_EMISSION[logged]) return MODE_EMISSION[logged];
   const rig = (rigModeLabel || '').toUpperCase();
   if (!rig) return '';
-  if (/^(USB|LSB|AM|FM)/.test(rig) && !/-D$|DATA/.test(rig)) return 'p';
   if (/^CW/.test(rig)) return 'c';
-  if (/RTTY|DATA|-D$/.test(rig)) return 'd';
+  if (/RTTY|DATA|-D$/.test(rig)) return dataModeMeansVoice(mhz) ? 'p' : 'd';
+  if (/^(USB|LSB|AM|FM)/.test(rig)) return 'p';
   return '';
 }
 
@@ -2195,8 +2211,8 @@ const SSB_WIDTH = 0.003;
 function emissionSpan(mhz, emission) {
   if (emission !== 'p') return [mhz, mhz];
   const rig = (rigModeLabel || '').toUpperCase();
-  if (rig.startsWith('LSB')) return [mhz - SSB_WIDTH, mhz];
-  if (rig.startsWith('USB')) return [mhz, mhz + SSB_WIDTH];
+  if (rig.startsWith('LSB') || rig === 'DATA-L') return [mhz - SSB_WIDTH, mhz];
+  if (rig.startsWith('USB') || rig === 'DATA-U') return [mhz, mhz + SSB_WIDTH];
   return [mhz, mhz];                     // AM, FM, or no rig: judge the dial
 }
 
@@ -2229,7 +2245,7 @@ function privCheck(mhz) {
   if (!inBand) return { level: 'bad', text: 'Outside the amateur bands' };
 
   const segs = PRIVS[cls] || [];
-  const emission = currentEmission();
+  const emission = currentEmission(mhz);
   const here = segs.filter(([lo, hi]) => mhz >= lo && mhz <= hi);
 
   if (!here.length) {
@@ -3961,6 +3977,10 @@ function telActive() {
 const TEL_BASE_MODE = { 'DATA-U': 'USB', 'DATA-L': 'LSB', 'DATA-FM': 'FM' };
 function telModeName() {
   const m = rigModeLabel || '';
+  /* Only a data mode being used for phone is reported as its sideband. Sat
+     on 14.074 in USB-D with nothing else running, the honest answer is
+     USB-D, and the dashboard is right to call that digital. */
+  if (rigIsDataMode() && !dataModeMeansVoice(rigLastHz / 1e6)) return m;
   return TEL_BASE_MODE[m] || m.replace(/-D$/i, '');
 }
 
@@ -5742,6 +5762,9 @@ const YAESU_MODE_LABEL = {
   '6':'RTTY-L', '7':'CW-L',   '8':'DATA-L',  '9':'RTTY-U',
   'A':'DATA-FM','B':'FM-N',   'C':'DATA-U',  'D':'AM-N', 'E':'C4FM'
 };
+/* The same judgement for a radio whose data modes are modes in their own
+   right rather than a flag. */
+const YAESU_DATA_VOICE = { '8': 'SSB', 'C': 'SSB', 'A': 'FM' };
 const YAESU_MODE_APP = {
   '1':'SSB', '2':'SSB', '3':'CW', '4':'FM', '5':'AM',
   '6':'RTTY', '7':'CW', '9':'RTTY', 'B':'FM', 'D':'AM',
@@ -5781,7 +5804,11 @@ function civSetMode(code, dataFlag) {
   /* A DATA mode is not SSB. Which digital mode it is — FT8, FT4, JS8, PSK31 —
      only the operator knows, so clear the field and let them say. */
   if (rigModeChanged(code + ':' + (on ? 1 : 0))) {
-    applyRigMode(on ? '' : CIV_MODE_APP[code]);
+    /* A data mode clears the field, because USB-D could be FT8, FT4, JS8 or
+       PSK31 — unless the operator has said their phone runs in a data mode
+       and the dial is on a phone frequency, where it is plainly SSB. */
+    const voice = !on || dataModeMeansVoice(rigLastHz / 1e6);
+    applyRigMode(voice ? CIV_MODE_APP[code] : '');
     telPoke();
   }
 }
@@ -5818,7 +5845,11 @@ function yaesuSetMode(code) {
   rigModeCode = code;
   rigModeLabel = YAESU_MODE_LABEL[code] || '';
   paintRigReadout();
-  if (rigModeChanged(code)) { applyRigMode(YAESU_MODE_APP[code]); telPoke(); }
+  if (rigModeChanged(code)) {
+    const voice = YAESU_DATA_VOICE[code] && dataModeMeansVoice(rigLastHz / 1e6);
+    applyRigMode(voice ? YAESU_DATA_VOICE[code] : YAESU_MODE_APP[code]);
+    telPoke();
+  }
 }
 
 /* The modes offered as buttons: the ones all three families agree on. A radio
@@ -5947,7 +5978,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-37';
+const APP_BUILD = '2026-11-19-38';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

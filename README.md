@@ -573,6 +573,16 @@ apart would see them fight over the frequency and flap the transmit flag. The
 safe assumption about an unknown shack is that it cannot, so by default the
 logger simply stays quiet there.
 
+With it on, **the dial decides what a data mode means.** On a phone frequency
+it is phone: the log's Mode is filled with SSB rather than cleared, the
+privilege check judges it as phone, and the shack is told the plain sideband.
+On a data frequency — 14.074, say — nothing changes: it is still data, the Mode
+field is still left for the operator to choose, and the shack is told `USB-D`,
+which it is right to call digital.
+
+The phone portion of each band for that purpose comes from the most generous
+licence class, so it does not depend on holding any particular one.
+
 With it on, a data mode is reported to the shack as its **plain sideband** —
 USB-D as `USB`, DATA-U as `USB` — because of what it means for one of these
 packets to be acted on at all. The shack prefers the real WSJT-X whenever it is
