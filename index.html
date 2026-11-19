@@ -1402,7 +1402,10 @@ footer {
               running and reporting over this same path, and a shack that cannot tell two
               senders apart would see them fight. Say YES only if your shack prefers the real
               WSJT-X when both are reporting &mdash; needed if your radio takes transmit audio
-              over USB, which means operating phone in a data mode too.
+              over USB, which means operating phone in a data mode too. With it on, a data
+              mode is reported as its plain sideband &mdash; USB-D as <code>USB</code> &mdash;
+              because the only packets of ours the shack acts on are the ones sent while
+              WSJT-X is not running, which on such a station means phone.
             </div>
             <div class="udp-help send-help" id="send-queue"
               style="color:var(--amber);display:none"></div>
@@ -3705,11 +3708,28 @@ function telActive() {
   return telOnData || !rigIsDataMode();
 }
 
+/* What to call the mode on the wire.
+
+   A data mode is reported as its plain sideband — USB-D as USB — because of
+   what it means for a packet of ours to be acted on at all. The shack prefers
+   the real WSJT-X whenever it is reporting, so the only times our Status is
+   used are times WSJT-X is not running. On a station that sits in a data mode
+   to route transmit audio over USB, that means phone. Saying USB-D there
+   would have the dashboard file an SSB contact as digital.
+
+   The radio's own label is still what the operator sees in the rig panel;
+   this is only how it is described to the shack. */
+const TEL_BASE_MODE = { 'DATA-U': 'USB', 'DATA-L': 'LSB', 'DATA-FM': 'FM' };
+function telModeName() {
+  const m = rigModeLabel || '';
+  return TEL_BASE_MODE[m] || m.replace(/-D$/i, '');
+}
+
 function telFields() {
   const call = ($('inp-call') && $('inp-call').value.trim().toUpperCase()) || '';
   return {
     dialHz: rigLastHz,
-    mode: rigModeLabel || '',
+    mode: telModeName(),
     /* Only once it looks like a callsign, so the dashboard is not fed every
        keystroke of one being typed. */
     dxCall: /^[A-Z0-9]*\d[A-Z0-9]*[A-Z]/.test(call) ? call : '',
@@ -5687,7 +5707,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-35';
+const APP_BUILD = '2026-11-19-36';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
