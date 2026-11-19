@@ -736,6 +736,9 @@ body.tx::after {
 }
 .cb-status strong { color: var(--text); }
 .cb-status.ready strong { color: var(--green); }
+/* A newer build is information, not a fault — blue, not the warning amber
+   the band-plan check uses. Nothing is wrong with the copy in hand. */
+.cb-status .cb-new { color: var(--blue); }
 .cb-bar {
   display: none; height: 4px; margin-top: 8px;
   background: var(--bg); border-radius: 2px; overflow: hidden;
@@ -3188,6 +3191,11 @@ async function bkPaint() {
 const CB_DB_NAME = 'w4ggj_callbook', CB_DB_VER = 1;
 const CB_CALLS = 'calls', CB_META = 'meta';
 const CALLBOOK_URL = 'https://raw.githubusercontent.com/w4ggj/qso-logger/data/callbook.psv.gz';
+/* Published beside the data by the weekly build: ~105 bytes carrying the
+   build timestamp and the callsign count. Cheap enough to check on every
+   visit to the panel, which is what turns UPDATE from a guess into a
+   decision. */
+const CALLBOOK_META_URL = 'https://raw.githubusercontent.com/w4ggj/qso-logger/data/meta.json';
 const CTY_URL = './cty.json';
 
 let cbDbPromise = null;
@@ -3280,6 +3288,11 @@ async function cbDownload(onProgress) {
   }
   try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
 
+  /* Which build this is. Best effort: a failure here costs the panel its
+     "up to date" line, and must not cost the operator the callbook. */
+  let sourceBuild = null;
+  try { const m = await cbFetchMeta(); if (m) sourceBuild = m.built; } catch (e) {}
+
   const res = await fetch(CALLBOOK_URL, { cache: 'no-store' });
   if (!res.ok) throw new Error('Download failed — HTTP ' + res.status);
   const total = Number(res.headers.get('content-length')) || 0;
@@ -3332,8 +3345,14 @@ async function cbDownload(onProgress) {
   take(tail.trim());
   await flush();
 
+  /* `built` is when this device downloaded; `source` is which build it got.
+     Only the second can answer "is there anything newer", so it is recorded
+     here rather than inferred later. A copy stored before this existed has
+     no `source`, and the panel falls back to the download date. */
   const info = { k: 'info', count, bytes: seen, built: new Date().toISOString() };
+  if (sourceBuild) info.source = sourceBuild;
   await cbIdb(CB_META, 'readwrite', st => st.put(info));
+  cbRemote = undefined;          /* re-check against the copy we now hold */
   return info;
 }
 
@@ -3342,25 +3361,117 @@ async function cbWipe() {
   await cbIdb(CB_META,  'readwrite', st => st.clear());
 }
 
-/* ─── Settings panel ─── */
+/* ─── Is there a newer build than the one on this device? ───
+
+   undefined = not looked yet, null = looked and could not tell (offline, or
+   GitHub unreachable). The difference matters: the panel must never claim
+   "up to date" on the strength of a failed request. */
+let cbRemote = undefined;
+
+const CB_META_TIMEOUT = 6000;
+
+async function cbFetchMeta() {
+  /* A wifi that accepts the connection and then says nothing — a captive
+     portal, a hotel gateway — would otherwise leave the panel waiting for
+     ever. Give up and show what is held. */
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), CB_META_TIMEOUT) : null;
+  let res;
+  try {
+    res = await fetch(CALLBOOK_META_URL, ctl ? { cache: 'no-store', signal: ctl.signal }
+                                             : { cache: 'no-store' });
+  } finally { if (timer) clearTimeout(timer); }
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const m = await res.json();
+  if (!m || !m.built) throw new Error('no build stamp');
+  return m;
+}
+
+/* Looked up once per page load. Opening Settings repeatedly should not send
+   a request each time, and the file changes once a week. */
+async function cbRemoteMeta() {
+  if (cbRemote !== undefined) return cbRemote;
+  cbRemote = null;                       /* so a second caller does not race a second fetch */
+  try { cbRemote = await cbFetchMeta(); } catch (e) { cbRemote = null; }
+  return cbRemote;
+}
+
+/* "16 Nov" — short enough to sit in the one-line status without wrapping. */
+function cbFmtDay(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+/* The build this device holds: what it recorded at download time, or, for a
+   copy stored before that was kept, nothing — and then the download date is
+   all we can honestly show. */
+function cbHeldBuild(info) { return info && info.source ? info.source : null; }
+
+function cbIsStale(info, remote) {
+  if (!info || !remote || !remote.built) return false;
+  const held = cbHeldBuild(info) || info.built;   /* fall back to when it was fetched */
+  if (!held) return false;
+  const a = Date.parse(remote.built), b = Date.parse(held);
+  return isFinite(a) && isFinite(b) && a > b;
+}
+
 function cbFmtBytes(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB'; }
 
-async function cbPaint() {
+/* Two paints: what this device knows on its own, straight away, then the
+   comparison against the published build once that answer arrives. A slow or
+   failed lookup therefore costs the operator nothing. `cbPaintSeq` makes a
+   late reply from an earlier paint lose to a newer one. */
+let cbPaintSeq = 0;
+
+function cbRender(info, remote) {
   const el = $('cb-status'); if (!el) return;
-  const info = await cbStat();
   const get = $('cb-get'), del = $('cb-del');
-  if (info && info.count) {
-    const when = (info.built || '').slice(0, 10);
-    el.className = 'cb-status ready';
-    el.innerHTML = `<strong>${info.count.toLocaleString()}</strong> US callsigns stored &mdash; downloaded ${when}`;
-    if (get) get.textContent = 'UPDATE';
-    if (del) del.style.display = '';
-  } else {
+
+  if (!(info && info.count)) {
     el.className = 'cb-status';
     el.textContent = 'Not downloaded — DX country lookup still works offline.';
     if (get) get.textContent = 'DOWNLOAD (~12.7 MB)';
     if (del) del.style.display = 'none';
+    return;
   }
+
+  const n = `<strong>${info.count.toLocaleString()}</strong> US callsigns`;
+  const held = cbHeldBuild(info);
+  /* Name the build where it is known, and the download date where it is not.
+     Saying "8 Nov build" about a copy whose build we never recorded would be
+     a guess dressed up as a fact. */
+  const from = held ? `from the ${cbFmtDay(held)} build`
+                    : `downloaded ${cbFmtDay(info.built)}`;
+
+  if (remote && cbIsStale(info, remote)) {
+    el.className = 'cb-status ready stale';
+    el.innerHTML = `${n} ${from} · <span class="cb-new">${cbFmtDay(remote.built)} build available` +
+      `${remote.callsigns ? ` (${remote.callsigns.toLocaleString()})` : ''}</span>`;
+  } else if (remote) {
+    el.className = 'cb-status ready';
+    el.innerHTML = `${n} ${from} — up to date`;
+  } else {
+    /* No answer from GitHub: state what is held and claim nothing about it. */
+    el.className = 'cb-status ready';
+    el.innerHTML = `${n} ${from}`;
+  }
+  if (get) get.textContent = 'UPDATE';
+  if (del) del.style.display = '';
+}
+
+async function cbPaint() {
+  const el = $('cb-status'); if (!el) return;
+  const seq = ++cbPaintSeq;
+  const info = await cbStat();
+  if (seq !== cbPaintSeq) return;
+  cbRender(info, cbRemote === undefined ? null : cbRemote);
+
+  /* Only worth asking once something is stored to compare against. */
+  if (!(info && info.count)) return;
+  const remote = await cbRemoteMeta();
+  if (seq !== cbPaintSeq) return;
+  cbRender(info, remote);
 }
 
 let cbBusy = false;
@@ -5981,7 +6092,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-40';
+const APP_BUILD = '2026-11-19-41';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;

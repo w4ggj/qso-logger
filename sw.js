@@ -1,6 +1,6 @@
-/* TavaOne // QSO Logger — Service Worker v28 */
+/* TavaOne // QSO Logger — Service Worker v29 */
 
-const CACHE = 'tavaone-qso-v43';
+const CACHE = 'tavaone-qso-v44';
 
 const ASSETS = [
   './',
@@ -56,8 +56,12 @@ self.addEventListener('fetch', e => {
   ].some(h => url.hostname.includes(h) || url.hostname === h);
 
   /* version.json is how the page finds out it is stale — caching it would
-     defeat the whole point, so it always goes to the network. */
-  if (alwaysNetwork || url.pathname.endsWith('/version.json')) {
+     defeat the whole point, so it always goes to the network. The callbook's
+     meta.json is the same job for the offline data: served from the cache it
+     would answer with the build the device already has, for ever. */
+  if (alwaysNetwork ||
+      url.pathname.endsWith('/version.json') ||
+      url.pathname.endsWith('/meta.json')) {
     e.respondWith(
       fetch(e.request).catch(() => new Response('', { status: 503 }))
     );
