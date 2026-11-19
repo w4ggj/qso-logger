@@ -58,6 +58,10 @@ student was on the mic.
   sent waits in a queue that survives a refresh; logging never blocks on it.
   Needs a small shim on the same machine, because **a browser cannot send UDP**
   — see below.
+- **Licence privileges** — pick a US licence class in Settings and the
+  frequency field turns red when the dial leaves what that class may use for
+  the mode you are in. Off by default, because this is United States
+  regulation and a warning aimed at the wrong country is worse than none.
 - **Callsign lookups** — QRZ first (via a small Cloudflare Worker proxy), with an
   automatic free fallback to callook.info and HamDB. No shack-PC bridge.
 - **Backup & restore** — your log lives only in the browser you made it in, so
@@ -630,6 +634,49 @@ contact in a queue which is written to storage, so it survives a refresh or a
 closed laptop, and retries with a backoff of 2s, 4s, 8s up to a minute. The
 panel shows how many are waiting. When the shim answers again they go out
 oldest first.
+
+## Licence privileges
+
+Choosing a US licence class in Settings — Novice, Technician, General,
+Advanced or Amateur Extra — turns on a check against the dial. The frequency
+field goes red and says what is wrong:
+
+- **Outside your privileges** — the class has nothing at this frequency.
+- **Phone / CW / Data not permitted here** — the class has the frequency, but
+  not for the mode in the log's Mode field. 30 m, for instance, has no phone
+  for anyone, Extra included.
+- **Outside the amateur bands.**
+- **Your sidebands reach past the edge** — amber rather than red, see below.
+
+The mode comes from the log's **Mode** field, falling back to what the radio
+reports. An unknown mode is not guessed at: no mode, no verdict.
+
+### The sidebands, not just the dial
+
+An SSB signal is about 3 kHz wide and sits to one side of the carrier, so a
+dial legally inside a segment can still push the signal past the edge — LSB
+below it, USB above it. That is flagged in amber rather than red, because the
+app knows the dial exactly and the occupied bandwidth only approximately.
+CW and data are judged on the carrier alone.
+
+### What it does not do
+
+**Off unless a class is chosen.** This is United States regulation and nothing
+else, and the default is no check at all.
+
+**Continental US assumed.** The 40 m plan carries footnotes for ITU Regions 1
+and 3, and for Region 2 west of 130 W or south of 20 N. Those are not applied.
+
+**60 m gets a note, not a verdict** — it is five fixed channels with their own
+bandwidth and power rules, and the published guidance contradicts itself on
+the carrier offset, so the app says so and leaves it to the operator.
+
+Segments come from the [ARRL frequency allocations chart][arrl] (updated
+14 April 2022), which is a secondary source. **47 CFR 97.301 and 97.305 are the
+rule.** This catches an obvious mistake; the operator is responsible for their
+own transmissions.
+
+[arrl]: https://www.arrl.org/frequency-allocations
 
 ## On-screen keyboards
 
