@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-35",
-  "notes": "Telemetry announces itself as TavaOne; data modes are now a choice"
+  "build": "2026-11-19-36",
+  "notes": "Telemetry reports a data mode as its plain sideband, so SSB is not filed as digital"
 }

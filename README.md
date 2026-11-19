@@ -569,6 +569,14 @@ apart would see them fight over the frequency and flap the transmit flag. The
 safe assumption about an unknown shack is that it cannot, so by default the
 logger simply stays quiet there.
 
+With it on, a data mode is reported to the shack as its **plain sideband** —
+USB-D as `USB`, DATA-U as `USB` — because of what it means for one of these
+packets to be acted on at all. The shack prefers the real WSJT-X whenever it is
+reporting, so the only Status of ours it uses is one sent while WSJT-X is not
+running, which on such a station means phone. Saying `USB-D` there has the
+dashboard file an SSB contact as digital. The rig panel still shows the radio
+as it really is; this is only how the mode is described to the shack.
+
 Say yes only where the receiving end prefers the real WSJT-X by program id.
 That is not an edge case: a radio that takes its transmit audio over USB — an
 IC-7300 with `DATA OFF MOD` left on the microphone, say — must be in a data
