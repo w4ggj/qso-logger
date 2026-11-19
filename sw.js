@@ -1,6 +1,6 @@
-/* TavaOne // QSO Logger — Service Worker v27 */
+/* TavaOne // QSO Logger — Service Worker v28 */
 
-const CACHE = 'tavaone-qso-v42';
+const CACHE = 'tavaone-qso-v43';
 
 const ASSETS = [
   './',
@@ -9,7 +9,10 @@ const ASSETS = [
   /* The DXCC prefix table — country lookup has to survive a cold start with
      no signal, so it is pre-cached with the shell rather than fetched lazily. */
   './cty.json',
-  'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap'
+  /* Must match the stylesheet index.html actually links, character for
+     character — a precache entry under any other URL is never read back,
+     and a cold offline start falls through to system fonts. */
+  'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap'
 ];
 
 /* Install: pre-cache app shell */

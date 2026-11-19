@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-39",
-  "notes": "Features link in the footer"
+  "build": "2026-11-19-40",
+  "notes": "The offline cache keeps the fonts the app actually uses"
 }
