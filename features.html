@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TavaOne // QSO Logger — features</title>
+<meta name="description" content="A complete amateur radio logbook that runs in a browser. No install, no account, no server holding your log. Reads your rig over the CAT cable, keys it, and gets your contacts home.">
+
+<link rel="icon" href="favicon.ico">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<!-- So the link carries its own card when it is pasted into a forum,
+     a cluster chat or a group. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="TavaOne // QSO Logger">
+<meta property="og:title" content="TavaOne // QSO Logger">
+<meta property="og:description" content="A complete amateur radio logbook that runs in a browser. No install, no account, no server holding your log. Reads your rig over the CAT cable, keys it, and gets your contacts home.">
+<meta property="og:url" content="https://qso.tavaone.com/features.html">
+<meta property="og:image" content="https://qso.tavaone.com/icons/icon-512.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="TavaOne // QSO Logger">
+<meta name="twitter:description" content="A browser-based amateur radio logbook with CAT rig control, PTT, licence-privilege warnings and an offline callsign database.">
+<meta name="twitter:image" content="https://qso.tavaone.com/icons/icon-512.png">
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* Layout: a narrow single column of labelled sections, the way a band plan
+     chart or a rig manual reads — eyebrow, rule, then the list. Dark only,
+     because the logger itself is dark and this page is its shop window. */
+  :root {
+    color-scheme: dark;
+    --bg:      #0f172a;
+    --bg-card: #162032;
+    --bg-sunk: #0d1526;
+    --line:    #243347;
+    --line-2:  #334155;
+    --text:    #e2e8f0;
+    --dim:     #94a3b8;
+    --head:    #f8fafc;
+    --green:   #34d399;
+    --amber:   #fbbf24;
+    --red:     #ef4444;
+    --ui:   'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* No platform skeleton here, so the page pads itself clear of a phone's
+     system bars. */
+  html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  body { margin: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ui);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 56px 72px;
+  }
+
+  /* ── masthead ─────────────────────────────────────────────── */
+  .mast { margin-bottom: 44px; }
+
+  .logo {
+    font-family: var(--ui);
+    font-weight: 800;
+    font-size: clamp(1.9rem, 6vw, 2.6rem);
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    color: var(--head);
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  .logo .accent { color: var(--green); }
+  .logo .slash  { color: var(--line-2); font-weight: 600; }
+
+  .pitch {
+    font-size: clamp(1.02rem, 2.6vw, 1.18rem);
+    color: var(--dim);
+    max-width: 56ch;
+    text-wrap: balance;
+    margin: 0 0 24px;
+  }
+  .pitch strong { color: var(--text); font-weight: 600; }
+
+  .url {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--green);
+    text-decoration: none;
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    padding: 9px 16px;
+  }
+  .url:hover { background: rgba(52, 211, 153, 0.1); }
+  .url:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+
+  /* ── the numbers ──────────────────────────────────────────── */
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 52px;
+  }
+  @media (min-width: 620px) { .figures { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+  .fig { background: var(--bg-card); padding: 16px 14px; min-width: 0; }
+  .fig b {
+    display: block;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--green);
+    line-height: 1.2;
+  }
+  .fig span {
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    margin-top: 5px;
+  }
+
+  /* ── sections ─────────────────────────────────────────────── */
+  section { margin-bottom: 44px; }
+
+  h2 {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.17em;
+    color: var(--green);
+    margin: 0 0 4px;
+  }
+  .rule { height: 1px; background: var(--line); margin-bottom: 20px; }
+
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+
+  li { padding-left: 22px; position: relative; min-width: 0; }
+  li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0.62em;
+    width: 7px; height: 7px;
+    border: 1px solid var(--green);
+    border-radius: 1px;
+  }
+  li b { color: var(--head); font-weight: 600; }
+  li code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    color: var(--green);
+    background: var(--bg-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
+
+  /* ── the aside that shows a real frame ────────────────────── */
+  .frame {
+    background: var(--bg-sunk);
+    border: 1px solid var(--line);
+    border-left: 2px solid var(--green);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-top: 20px;
+    overflow-x: auto;
+  }
+  .frame .lbl {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin-bottom: 7px;
+  }
+  .frame pre {
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    color: var(--text);
+    margin: 0;
+    line-height: 1.8;
+  }
+  .frame .cmt { color: var(--dim); }
+
+  /* ── requirements ─────────────────────────────────────────── */
+  .reqs h2 { color: var(--amber); }
+  .reqs li::before { border-color: var(--amber); }
+
+  .reqs { border-top: 1px solid var(--line); padding-top: 32px; margin-top: 52px; }
+
+  /* ── footer ───────────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--line);
+    margin-top: 44px;
+    padding-top: 22px;
+    font-size: 0.82rem;
+    color: var(--dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+  }
+  footer a { color: var(--green); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .call { font-family: var(--mono); font-weight: 500; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <h1 class="logo">Tava<span class="accent">One</span> <span class="slash">//</span> QSO <span class="accent">Logger</span></h1>
+    <p class="pitch">
+      A complete amateur radio logbook that runs in a browser. <strong>No install,
+      no account, no server holding your log.</strong> Reads your rig over the CAT
+      cable, keys it, and gets your contacts home.
+    </p>
+    <a class="url" href="https://qso.tavaone.com">qso.tavaone.com</a>
+  </header>
+
+  <div class="figures">
+    <div class="fig"><b>19</b><span>Radios</span></div>
+    <div class="fig"><b>822k</b><span>Calls offline</span></div>
+    <div class="fig"><b>8</b><span>Award programs</span></div>
+    <div class="fig"><b>0</b><span>Accounts</span></div>
+  </div>
+
+  <section>
+    <h2>Logging</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Nothing to install.</b> Open the page and log. It keeps working with
+        no internet, and installs to a phone or tablet home screen like an app.</li>
+      <li><b>Your log stays yours.</b> It lives in your browser, not on somebody's
+        server. No sign-up, no subscription, nothing to cancel.</li>
+      <li><b>Sessions</b> — name a log per activation, contest or day, and switch
+        between them.</li>
+      <li><b>Award programs built in</b> — POTA, WWFF, SOTA, IOTA, BOTA, GMA, LOTA
+        and WCA, as activator or hunter, exported to ADIF with the right tags.</li>
+      <li><b>GOTA operator tracking.</b> Log who was actually on the mic. Its own
+        column, a Students count, and it survives into the export.</li>
+      <li><b>Edit anything.</b> Load a logged contact back into the form, fix it,
+        save. A half-typed next QSO is parked and handed back.</li>
+      <li><b>ADIF and CSV export</b>, plus backup and restore as a file.</li>
+      <li><b>Merge logs across devices.</b> Log on the phone in the field, merge
+        into the laptop at home. Duplicates are matched on content, not on row
+        numbers, so re-importing the same file changes nothing.</li>
+      <li><b>Callsign lookups</b> — QRZ, falling back automatically to free
+        services. Fills in name, grid and QTH.</li>
+      <li><b>Offline, properly.</b> Download the whole US callsign database to the
+        device and keep looking up calls with no signal at all. It updates when
+        you press the button, not behind your back.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Rig control</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Live CAT over the USB cable.</b> Frequency, mode and band read
+        straight from the radio — no extra software, no shack-PC bridge. Desktop
+        and Android.</li>
+      <li><b>Nineteen radios</b> across three protocol drivers: Icom CI-V, Yaesu
+        CAT, Kenwood and Elecraft. Full serial control per radio — baud, data
+        bits, stop bits, parity and handshake.</li>
+      <li><b>The frequency field is the VFO knob.</b> Click it and scroll to tune
+        the radio: 1 kHz a step, <code>Shift</code> for 100 Hz,
+        <code>Alt</code> for 10 kHz.</li>
+      <li><b>Band quick-jump.</b> One tap per band, and each band remembers where
+        you were — hop away and back and you return to your own frequency, not a
+        canned one.</li>
+      <li><b>Set the mode from the logger</b> — LSB, USB, LSB-D, USB-D, CW, AM,
+        FM, RTTY, with the radio's current mode lit. On an Icom the filter you
+        were using survives the change, which it does not if you ask carelessly.</li>
+      <li><b>PTT from the logger.</b> Key the radio over the CAT cable with a
+        button or a key you assign — a USB footpedal mapped to a function key
+        becomes your PTT. Hold-to-talk or toggle, a transmit time limit, and
+        <code>Escape</code> always unkeys.</li>
+    </ul>
+
+    <div class="frame">
+      <div class="lbl">What PTT actually sends, on an Icom</div>
+      <pre>FE FE 94 E0 1C 00 01 FD   <span class="cmt">transmit</span>
+FE FE 94 E0 1C 00 00 FD   <span class="cmt">receive</span></pre>
+    </div>
+  </section>
+
+  <section>
+    <h2>Licence privileges</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Pick your US licence class</b> and the frequency box turns red when
+        the dial leaves what that class may use for the mode you are logging.</li>
+      <li><b>It checks your sidebands, not just the dial.</b> An SSB signal is
+        about 3 kHz wide and sits to one side of the carrier, so a dial legally
+        inside a segment can still put energy outside it. Sitting on
+        <code>3.8005</code> LSB is inside General's phone segment and still
+        wrong. The logger says so.</li>
+      <li><b>Off unless you turn it on</b>, so operators outside the US are never
+        shown a warning written for somebody else's rules.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Getting contacts home</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Send each QSO to your shack as you log it</b> — straight into the
+        station software you already run, in the format it already understands,
+        instead of exporting an ADIF and importing it by hand.</li>
+      <li><b>Live rig telemetry.</b> Frequency, mode and transmit state sent home
+        as you operate, so a shack dashboard follows your dial on phone the way
+        it already does on digital.</li>
+      <li><b>Nothing is lost when the link drops.</b> A contact that cannot be
+        sent waits in a queue that survives a refresh or a closed laptop, and goes
+        out when the connection returns. Logging never waits on the network.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Built for the field</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Number pads on number fields</b>, so a phone does not throw a full
+        keyboard at you for a signal report.</li>
+      <li><b>A mobile layout that puts settings where you would look</b> — at the
+        foot of the page, not buried halfway up it.</li>
+      <li><b>An optional device PIN</b>, to stop a shared shack laptop or a club
+        tablet being opened by accident.</li>
+    </ul>
+  </section>
+
+  <section class="reqs">
+    <h2>What you need</h2>
+    <div class="rule"></div>
+    <ul>
+      <li><b>Rig control needs Chrome or Edge.</b> The browser API it uses does
+        not exist in Safari or Firefox, so there is no CAT control on an iPhone
+        or iPad. Logging itself works in any browser.</li>
+      <li><b>Three radios are confirmed on real hardware</b> — IC-706MKIIG,
+        IC-7300 and FT-991A. The other sixteen are built from published protocols
+        and are labelled <em>untested</em> in the picker until somebody reports
+        back.</li>
+      <li><b>Sending contacts to the shack needs a small helper</b> running on
+        that computer, because a browser cannot send UDP. One file and a
+        double-click — but it is not nothing.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <span class="call">W4GGJ</span>
+    <a href="https://qso.tavaone.com">qso.tavaone.com</a>
+    <span>Free, and open source.</span>
+  </footer>
+
+</div>
+</body>
+</html>
