@@ -543,6 +543,43 @@ configuration sits in Settings, but not a different **host**, since a web page
 that could choose the destination address could use the shim to reach other
 machines on the network.
 
+### Live rig telemetry
+
+With **Live rig telemetry** on, the logger also sends a WSJT-X **type 1
+Status** packet — dial frequency, mode and the transmit flag — down the same
+path as a logged QSO. A shack dashboard that already follows WSJT-X on digital
+then follows the dial on phone too, with no new port, no firewall change and
+nothing to configure at the far end.
+
+It goes out when something changes — the dial moves, the mode changes,
+transmit starts or stops — and on a heartbeat of 1.5 s otherwise so the far
+end does not time the radio out. A floor of 200 ms between packets means
+spinning the dial cannot flood the link. Transmit changes are never held back
+for a heartbeat.
+
+**Not sent on data modes.** On USB-D or DATA-U, WSJT-X itself is running and
+sending its own Status over this very path. A receiver keys on the WSJT-X
+magic, not on who sent it, so two senders would fight over the frequency and
+flap the transmit flag. Knowing the mode is enough to stay out of the way —
+no need to detect WSJT-X at all.
+
+Telemetry is a statement about *now*, so a packet that cannot be sent is
+**dropped, not queued**: a stale one is worse than none, and the QSO queue must
+never fill up with them. Logged QSOs keep their queue and lose nothing.
+
+The field layout is checked by decoding each packet with a reader written
+separately from the writer, from the protocol's own field order. Every field
+is written even where nothing fills it: a reader walks them in order, so a
+field left out does not shorten the packet, it shifts every later one into the
+wrong place.
+
+Two limits worth knowing. Telemetry flows only while the logger is open and
+the rig connected. And the transmit flag reflects transmit the logger
+*caused* — key from the radio's front panel and it will not know. The shack
+treats that as cosmetic: the On Air badge holds for 15 minutes after any
+transmit or logged QSO, so a missed front-panel over under-reports briefly
+rather than going dark.
+
 ### Contacts logged somewhere else
 
 Each device keeps its own log — that is the design, not a limitation — so the

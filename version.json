@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-12-33",
-  "notes": "Fix: a PTT key with a modifier did not unkey on release"
+  "build": "2026-11-19-34",
+  "notes": "Live rig telemetry to the shack on voice modes, as a WSJT-X Status packet"
 }
