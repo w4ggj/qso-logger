@@ -637,8 +637,16 @@ oldest first.
 
 ## Licence privileges
 
-Choosing a US licence class in Settings — Novice, Technician, General,
-Advanced or Amateur Extra — turns on a check against the dial. The frequency
+Two separate things live in Settings, and keeping them apart matters.
+**Licence class** is a free-text label for the header strip and takes any text
+at all — Foundation, Full, VK Advanced. **Privilege check** is a dropdown that
+selects a body of United States regulation to check the dial against, and most
+of the world's operators have none, so it defaults to off. A US operator who
+only sets the dropdown gets that class shown in the header anyway, and a typed
+label wins over it.
+
+Choosing a US class — Novice, Technician, General, Advanced or Amateur Extra —
+turns on a check against the dial. The frequency
 field goes red and says what is wrong:
 
 - **Outside your privileges** — the class has nothing at this frequency.

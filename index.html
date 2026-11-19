@@ -1253,9 +1253,21 @@ footer {
         </div>
         <div class="grid-row">
           <label>CLASS</label>
-          <select id="station-class" onchange="saveStation(); paintPriv();"
-            title="Shown in the header strip. Choosing a US class also warns when the dial leaves your privileges.">
-          </select>
+          <input type="text" id="station-class" maxlength="20" placeholder="General, Extra, Foundation..."
+            oninput="saveStation()" title="Your licence class, shown in the header strip. Any text — Foundation, Full, VK Advanced.">
+        </div>
+
+        <div class="field" style="margin-top:10px;">
+          <label>Privilege check <span style="opacity:.6;font-weight:400;text-transform:none;letter-spacing:0">(United States only)</span></label>
+          <select id="priv-class" onchange="setPrivClass(this.value)"
+            title="Warns when the dial leaves what this class may use for the mode you are logging. US band plan only."></select>
+          <div class="udp-help send-help" style="margin-top:6px">
+            Warns when the dial leaves what your class may use for the mode in the log, and
+            flags an SSB signal whose sidebands reach past a segment edge. Segments are from
+            the ARRL chart; <strong>47 CFR 97.301 and 97.305 are the rule</strong>, and you are
+            responsible for your own transmissions. Continental US is assumed, and 60 m gets a
+            note rather than a verdict. Leave it on <em>No privilege check</em> anywhere else.
+          </div>
         </div>
 
         <div style="margin-top:14px;">
@@ -1769,6 +1781,10 @@ function save() { localStorage.setItem('w4ggj_log', JSON.stringify(log)); bkTouc
    the parts that have been set, so a brand-new operator sees an empty strip
    rather than someone else's QTH. */
 const QTH_KEY = 'w4ggj_qth', CLASS_KEY = 'w4ggj_class';
+/* Separate from CLASS_KEY on purpose. CLASS_KEY is a label for the header and
+   can say Foundation or VK Advanced; this one selects a body of United States
+   regulation to check against, and most of the world's operators have none. */
+const PRIV_KEY = 'w4ggj_priv_class';
 const getQth   = () => { try { return localStorage.getItem(QTH_KEY)   || ''; } catch (e) { return ''; } };
 const getClass = () => { try { return localStorage.getItem(CLASS_KEY) || ''; } catch (e) { return ''; } };
 
@@ -1788,7 +1804,9 @@ function paintStation() {
     const parts = [
       ['QTH: ',   getQth().toUpperCase(), null],
       ['GRID: ',  (localStorage.getItem('w4ggj_grid') || '').toUpperCase(), 'hdr-grid'],
-      ['CLASS: ', getClass().toUpperCase(), null],
+      /* The typed label wins; a US operator who only picked a class for the
+         privilege check gets it shown here rather than having to type it. */
+      ['CLASS: ', (getClass() || (getPrivClass() ? classLabel(getPrivClass()) : '')).toUpperCase(), null],
     ].filter(x => x[1]);
     meta.textContent = '';
     parts.forEach(([label, value, id], i) => {
@@ -1801,7 +1819,7 @@ function paintStation() {
     });
   }
   if ($('station-qth')   && document.activeElement !== $('station-qth'))   $('station-qth').value = getQth();
-  if ($('station-class') && document.activeElement !== $('station-class')) $('station-class').value = getClassId();
+  if ($('station-class') && document.activeElement !== $('station-class')) $('station-class').value = getClass();
 }
 
 function paintPin() {
@@ -2182,14 +2200,20 @@ function emissionSpan(mhz, emission) {
   return [mhz, mhz];                     // AM, FM, or no rig: judge the dial
 }
 
-function getClassId() {
-  const v = getClass();
+function getPrivClass() {
+  let v = '';
+  try { v = localStorage.getItem(PRIV_KEY) || ''; } catch (e) {}
   return CLASSES.some(c => c.id && c.id === v) ? v : '';
+}
+function setPrivClass(v) {
+  try { localStorage.setItem(PRIV_KEY, v || ''); } catch (e) {}
+  paintPriv();
+  paintStation();
 }
 
 /* Returns null when there is nothing to say, else { level, text }. */
 function privCheck(mhz) {
-  const cls = getClassId();
+  const cls = getPrivClass();
   if (!cls || !isFinite(mhz) || mhz <= 0) return null;
 
   if (inSixty(mhz)) {
@@ -2235,14 +2259,14 @@ function privCheck(mhz) {
 /* One source for the list, so the menu cannot drift from the table that
    decides what is legal. */
 function buildClassOptions() {
-  const sel = $('station-class');
+  const sel = $('priv-class');
   if (!sel || sel.options.length) return;
   CLASSES.forEach(c => {
     const o = document.createElement('option');
     o.value = c.id; o.textContent = c.label;
     sel.appendChild(o);
   });
-  sel.value = getClassId();
+  sel.value = getPrivClass();
 }
 
 function classLabel(id) {
