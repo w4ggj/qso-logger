@@ -616,6 +616,11 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
   border-radius: var(--r); padding: 10px 12px; margin-top: 6px;
   display: none;
 }
+/* .udp-help is hidden by default because it belongs to the Setup Guide
+   accordion. Help that is meant to be read without opening anything needs
+   its own class, or it is written and never seen. */
+.send-help { display: block; }
+
 .udp-help code {
   font-family: var(--mono); color: var(--dim);
   background: var(--bg4); padding: 1px 5px; border-radius: 2px;
@@ -1379,8 +1384,19 @@ footer {
                 <span id="send-readout">Off</span>
               </div>
             </div>
-            <div class="udp-help" id="send-queue" style="color:var(--amber)"></div>
-            <div class="udp-help">
+            <div class="udp-row">
+              <button class="btn btn-outline udp-toggle" id="tel-on"
+                onclick="setTelOn(!telOn)" style="flex:1">TELEMETRY: ON</button>
+            </div>
+            <div class="udp-help send-help">
+              Sends frequency, mode and transmit to the shack as you operate, so a dashboard
+              that already follows WSJT-X on digital follows the dial on phone too.
+              <strong>Not sent on data modes</strong> &mdash; there WSJT-X is running and
+              reporting over this same path, and two senders would fight over the frequency.
+            </div>
+            <div class="udp-help send-help" id="send-queue"
+              style="color:var(--amber);display:none"></div>
+            <div class="udp-help send-help">
               A browser cannot send UDP &mdash; there is no API for it. <code>tools/qso-udp-shim.js</code>
               in the repo turns an HTTP POST into the datagram your bridge is already listening for,
               and does nothing else. On Windows, double-click
@@ -3645,6 +3661,94 @@ let sendBusy = false, sendTimer = null, sendFails = 0;
    socket's buffer — nothing on the far side acknowledges anything. */
 const SEND_GAP = 25;
 
+/* ─── Live rig telemetry ───
+   The same WSJT-X Status packet the shack already understands, down the same
+   path as a logged QSO, so the dashboard follows the dial on phone the way it
+   follows it on digital.
+
+   Only on modes WSJT-X does not use. On a data mode WSJT-X is the one running
+   and sending its own Status over this very path; two senders would fight
+   over the frequency and flap the transmit flag, and the receiver cannot tell
+   them apart — it keys on the WSJT-X magic, not on who sent it. Knowing the
+   mode is enough to stay out of the way, with no need to detect WSJT-X. */
+const TEL_ON_KEY  = 'w4ggj_tel_on';
+const TEL_BEAT    = 1500;   // ms between packets when nothing is changing
+const TEL_MIN_GAP = 200;    // ms floor, so spinning the dial cannot flood
+
+let telOn = true;
+let telBeatTimer = null, telSoonTimer = null, telLastAt = 0;
+
+/* A data mode is anything the radio labels as one: USB-D and LSB-D on an
+   Icom, DATA-U/DATA-L/DATA-FM on a Yaesu. */
+function rigIsDataMode() {
+  return /-D$|DATA/i.test(rigModeLabel || '');
+}
+
+function telActive() {
+  return !!(sendOn && telOn && rigConnected && rigLastHz && rigModeLabel && !rigIsDataMode());
+}
+
+function telFields() {
+  const call = ($('inp-call') && $('inp-call').value.trim().toUpperCase()) || '';
+  return {
+    dialHz: rigLastHz,
+    mode: rigModeLabel || '',
+    /* Only once it looks like a callsign, so the dashboard is not fed every
+       keystroke of one being typed. */
+    dxCall: /^[A-Z0-9]*\d[A-Z0-9]*[A-Z]/.test(call) ? call : '',
+    report: ($('inp-rst-s') && $('inp-rst-s').value.trim()) || '',
+    transmitting: !!pttOn,
+    deCall: getCtrlOp() || '',
+    deGrid: ($('grid-input') && $('grid-input').value.trim()) || '',
+    dxGrid: ($('inp-their-grid') && $('inp-their-grid').value.trim().toUpperCase()) || ''
+  };
+}
+
+/* Fire and forget. Telemetry is a statement about now, so a packet that
+   cannot be sent is dropped rather than queued — a stale one is worse than
+   none, and the QSO queue must not be filled with them. */
+function telSend() {
+  if (!telActive()) return;
+  telLastAt = Date.now();
+  const body = wsjtxStatus(telFields());
+  fetch(sendEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body
+  }).catch(() => {});
+}
+
+/* Something changed: send now, but never faster than the floor. */
+function telPoke() {
+  if (!telActive()) return;
+  clearTimeout(telSoonTimer);
+  const since = Date.now() - telLastAt;
+  if (since >= TEL_MIN_GAP) telSend();
+  else telSoonTimer = setTimeout(telSend, TEL_MIN_GAP - since);
+}
+
+function telStart() {
+  clearInterval(telBeatTimer);
+  telBeatTimer = setInterval(() => { if (telActive()) telSend(); }, TEL_BEAT);
+}
+function telStop() {
+  clearInterval(telBeatTimer); clearTimeout(telSoonTimer);
+  telBeatTimer = telSoonTimer = null;
+}
+function setTelOn(on) {
+  telOn = !!on;
+  try { localStorage.setItem(TEL_ON_KEY, telOn ? '1' : '0'); } catch (e) {}
+  if (telOn) { telStart(); telPoke(); } else telStop();
+  paintTel();
+}
+
+function paintTel() {
+  const b = $('tel-on');
+  if (!b) return;
+  b.classList.toggle('on', telOn);
+  b.textContent = 'TELEMETRY: ' + (telOn ? 'ON' : 'OFF');
+}
+
 /* ─── The WSJT-X UDP protocol ───
    Logging a QSO in WSJT-X puts TWO packets on the wire, and a receiver may
    act on either: type 5 "QSO Logged", whose fields are laid out one after
@@ -3727,6 +3831,43 @@ function wsjtxQsoLogged(f) {
 
 function wsjtxLoggedAdif(adifText) {
   return wsjtxJoin([wsjtxHeader(12), wsjtxString(adifText)]);
+}
+
+function wsjtxBool(b) { return new Uint8Array([b ? 1 : 0]); }
+function wsjtxU32(n) {
+  const a = new Uint8Array(4);
+  new DataView(a.buffer).setUint32(0, n >>> 0, false);
+  return a;
+}
+function wsjtxU64(n) {
+  const a = new Uint8Array(8);
+  new DataView(a.buffer).setBigUint64(0, BigInt(Math.max(0, Math.round(n))), false);
+  return a;
+}
+
+/* Type 1, Status — what WSJT-X sends continuously so a receiver can follow
+   the dial. Every field is written, in order, even the ones nothing here
+   fills: a reader walks them one after another, so a field left out does not
+   shorten the packet, it shifts everything after it into the wrong place. */
+function wsjtxStatus(f) {
+  return wsjtxJoin([
+    wsjtxHeader(1),
+    wsjtxU64(f.dialHz),                                  // dial frequency, Hz
+    wsjtxString(f.mode),
+    wsjtxString(f.dxCall), wsjtxString(f.report),
+    wsjtxString(f.mode),                                 // tx mode
+    wsjtxBool(false),                                    // tx enabled
+    wsjtxBool(f.transmitting),
+    wsjtxBool(false),                                    // decoding
+    wsjtxU32(0), wsjtxU32(0),                            // rx df, tx df
+    wsjtxString(f.deCall), wsjtxString(f.deGrid), wsjtxString(f.dxGrid),
+    wsjtxBool(false),                                    // tx watchdog
+    wsjtxString(''),                                     // sub-mode
+    wsjtxBool(false),                                    // fast mode
+    new Uint8Array([0]),                                 // special operation mode
+    wsjtxU32(0), wsjtxU32(0),                            // freq tolerance, T/R period
+    wsjtxString(''), wsjtxString('')                     // config name, tx message
+  ]);
 }
 
 /* Both packets are built from one reading of the entry, so the fields in
@@ -3890,7 +4031,8 @@ function setSendOn(on) {
   sendOn = !!on;
   try { localStorage.setItem(SEND_ON_KEY, sendOn ? '1' : '0'); } catch (e) {}
   paintSend();
-  if (sendOn) sendFlush(); else { clearTimeout(sendTimer); setSendStatus('off', 'Off'); }
+  if (sendOn) { sendFlush(); if (telOn) telStart(); }
+  else { clearTimeout(sendTimer); telStop(); setSendStatus('off', 'Off'); }
 }
 function setSendUrl(v) {
   sendUrl = (v || '').trim() || SEND_URL_DFLT;
@@ -3915,7 +4057,10 @@ function paintSend() {
   const body = $('send-body');
   if (body) body.style.display = sendOn ? '' : 'none';
   const q = $('send-queue');
-  if (q) q.textContent = sendQueue.length ? `${sendQueue.length} waiting to send` : '';
+  if (q) {
+    q.textContent = sendQueue.length ? `${sendQueue.length} waiting to send` : '';
+    q.style.display = sendQueue.length ? '' : 'none';
+  }
   const sb = $('send-session-btn');
   if (sb) sb.style.display = sendOn ? '' : 'none';
 }
@@ -3929,10 +4074,12 @@ function sendInit() {
     sendPort = localStorage.getItem(SEND_PORT_KEY) || '';
     const f = localStorage.getItem(SEND_FMT_KEY);
     if (SEND_FORMATS.indexOf(f) !== -1) sendFmt = f;
+    telOn = localStorage.getItem(TEL_ON_KEY) !== '0';
   } catch (e) {}
   if ($('send-url'))  $('send-url').value  = sendUrl;
   if ($('send-port')) $('send-port').value = sendPort;
   if ($('send-fmt'))  $('send-fmt').value  = sendFmt;
+  paintTel();
   setSendStatus(sendOn ? 'off' : 'off', sendOn ? (sendQueue.length ? `${sendQueue.length} waiting` : 'On') : 'Off');
   paintSend();
   if (sendOn && sendQueue.length) sendFlush();
@@ -4071,6 +4218,7 @@ async function pttSet(on, why) {
      a moment, and a key released inside that window has to find pttOn true or
      its unkey is dropped as redundant — which leaves the radio transmitting. */
   pttOn = on;
+  telPoke();                 // the transmit flag should not wait for a beat
   clearTimeout(pttTimer);
   if (on) {
     pttStartedAt = Date.now();
@@ -4106,6 +4254,7 @@ function pttPanic(why) {
   try { RIG_TYPES[rigType].tx(false); } catch (e) {}
   if (pttOn && why) toast('Transmit stopped: ' + why, 'wrn');
   pttOn = false;
+  telPoke();
   paintPtt();
 }
 
@@ -4972,6 +5121,7 @@ async function rigConnect(port, auto) {
     rigStats = { bytes: 0, frames: 0, lastFrames: 0, rate: 0, last: 0 };
     paintPtt();
     paintRigModes();
+    telStart();
     if (rigType === 'civ') civProbe26();
     clearInterval(rigStatsTimer);
     rigStatsTimer = setInterval(paintRigStats, 1000);
@@ -5058,6 +5208,7 @@ async function rigDisconnect(silent, why) {
   if (rigQuietTimer) { clearTimeout(rigQuietTimer); rigQuietTimer = null; }
   if (rigStatsTimer) { clearInterval(rigStatsTimer); rigStatsTimer = null; }
   const st = $('rig-stats'); if (st) st.style.display = 'none';
+  telStop();
   paintPtt();
   paintRigModes();
   try { if (rigLink) await rigLink.close(); } catch (e) {}
@@ -5308,8 +5459,10 @@ function paintRigReadout() {
 
 function rigSetFreq(hz) {
   const mhzStr = fmtMhz(hz);
+  const moved = hz !== rigLastHz;
   rigLastHz = hz;
   paintRigReadout();
+  if (moved) telPoke();
   if (rigAutofill && Date.now() >= tuneHoldUntil) {
     $('inp-freq').value = mhzStr;
     autoDetectBand(mhzStr);        // reuse app's band mapper
@@ -5327,7 +5480,10 @@ function civSetMode(code, dataFlag) {
   paintRigReadout();
   /* A DATA mode is not SSB. Which digital mode it is — FT8, FT4, JS8, PSK31 —
      only the operator knows, so clear the field and let them say. */
-  if (rigModeChanged(code + ':' + (on ? 1 : 0))) applyRigMode(on ? '' : CIV_MODE_APP[code]);
+  if (rigModeChanged(code + ':' + (on ? 1 : 0))) {
+    applyRigMode(on ? '' : CIV_MODE_APP[code]);
+    telPoke();
+  }
 }
 
 /* Kenwood/Elecraft: 'FA00014250000' — 11 digits, against Yaesu's 9. CW-R and
@@ -5355,14 +5511,14 @@ function kenwoodSetMode(code) {
   rigModeCode = code;
   rigModeLabel = KENWOOD_MODE_LABEL[code] || '';
   paintRigReadout();
-  if (rigModeChanged(code)) applyRigMode(KENWOOD_MODE_APP[code]);
+  if (rigModeChanged(code)) { applyRigMode(KENWOOD_MODE_APP[code]); telPoke(); }
 }
 
 function yaesuSetMode(code) {
   rigModeCode = code;
   rigModeLabel = YAESU_MODE_LABEL[code] || '';
   paintRigReadout();
-  if (rigModeChanged(code)) applyRigMode(YAESU_MODE_APP[code]);
+  if (rigModeChanged(code)) { applyRigMode(YAESU_MODE_APP[code]); telPoke(); }
 }
 
 /* The modes offered as buttons: the ones all three families agree on. A radio
@@ -5491,7 +5647,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-12-33';
+const APP_BUILD = '2026-11-19-34';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
