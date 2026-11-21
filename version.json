@@ -1,4 +1,4 @@
 {
-  "build": "2026-11-19-41",
-  "notes": "The callbook panel says which build you hold and whether a newer one exists"
+  "build": "2026-11-21-42",
+  "notes": "POTA and SOTA references resolve to the park or summit name"
 }

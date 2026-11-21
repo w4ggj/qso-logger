@@ -478,6 +478,23 @@ textarea { resize: vertical; min-height: 50px; line-height: 1.4; }
 .pota-name { color: var(--text); font-size: 0.76rem; }
 .pota-loc  { color: var(--muted); font-size: 0.68rem; }
 
+/* The resolved name for a typed reference. Confirmation that the right
+   reference was typed — never a field, because ADIF has nowhere to put a
+   park's name and the uploaders read the reference. */
+.ref-name {
+  display: none;
+  margin-top: 5px;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.ref-name.show { display: block; }
+.ref-name .rn-name { color: var(--green); font-weight: 600; }
+.ref-name .rn-loc  { color: var(--muted); }
+.ref-name.bad  .rn-name { color: var(--amber); font-weight: 600; }
+.ref-name.wait { opacity: 0.6; }
+
 /* ══════════════════════════════════════════
    BUTTONS
 ══════════════════════════════════════════ */
@@ -2488,7 +2505,8 @@ function gpsGrid() {
 const PROGRAMS = [
   { id:'pota',  label:'POTA',  ph:'US-1234',   myAdif:'MY_POTA_REF', theirAdif:'POTA_REF',     hasRole:true,  searchable:true,  hint:'Parks on the Air' },
   { id:'wwff',  label:'WWFF',  ph:'KFF-1234',  myAdif:'MY_WWFF_REF', theirAdif:'WWFF_REF',     hasRole:true,  searchable:false, hint:'World Wildlife Flora & Fauna' },
-  { id:'sota',  label:'SOTA',  ph:'W4/TN-001', myAdif:'MY_SOTA_REF', theirAdif:'SOTA_REF',     hasRole:true,  searchable:false, hint:'Summits on the Air' },
+  /* association/region-number: W4T/SU-001, not W4/TN-001, which SOTA rejects. */
+  { id:'sota',  label:'SOTA',  ph:'W4T/SU-001', myAdif:'MY_SOTA_REF', theirAdif:'SOTA_REF',     hasRole:true,  searchable:false, hint:'Summits on the Air' },
   { id:'iota',  label:'IOTA',  ph:'NA-001',    myAdif:'MY_IOTA',      theirAdif:'IOTA',           hasRole:false, searchable:false, hint:'Islands on the Air' },
   { id:'bota',  label:'BOTA',  ph:'K-BAY-001', myAdif:'MY_BOTA_REF', theirAdif:'BOTA_REF',     hasRole:true,  searchable:false, hint:'Bays on the Air' },
   { id:'gma',   label:'GMA',   ph:'W-0001',    myAdif:'MY_GMA_REF',  theirAdif:'GMA_REF',      hasRole:true,  searchable:false, hint:'Global Mountain Activity' },
@@ -2521,14 +2539,17 @@ function renderProgramRefs() {
   if (activePrograms.size === 0) { container.innerHTML = ''; return; }
   container.innerHTML = [...activePrograms].map(id => {
     const p = PROGRAMS.find(x => x.id === id);
+    /* Every program whose references can be resolved gets the handler, not
+       only the one with the local search list. */
+    const oninput = (p.searchable || REF_SOURCES[id])
+      ? ` oninput="handleProgRefInput('${id}', this.value)"` : '';
     const searchInput = p.searchable ? `
       <div class="pota-wrap">
         <input type="text" id="prog-ref-${id}" placeholder="${p.ph}"
-          style="text-transform:uppercase"
-          oninput="handleProgRefInput('${id}', this.value)">
+          style="text-transform:uppercase"${oninput}>
         ${id === 'pota' ? '<div id="pota-dd"></div>' : ''}
       </div>` :
-      `<input type="text" id="prog-ref-${id}" placeholder="${p.ph}" style="text-transform:uppercase">`;
+      `<input type="text" id="prog-ref-${id}" placeholder="${p.ph}" style="text-transform:uppercase"${oninput}>`;
 
     return `<div class="prog-ref-block">
       <div class="prog-ref-header">
@@ -2542,6 +2563,7 @@ function renderProgramRefs() {
           <option value="hunter">Hunter/Chaser</option>
         </select>` : ''}
       </div>
+      ${REF_SOURCES[id] ? `<div class="ref-name" id="ref-name-${id}"></div>` : ''}
     </div>`;
   }).join('');
 
@@ -2549,6 +2571,141 @@ function renderProgramRefs() {
   if (activePrograms.has('pota')) {
     document.addEventListener('click', closePotaDropdown, { once: false });
   }
+}
+
+/* ─── Reference → name ───────────────────────────────────────────────────
+
+   Typing US-1916 should say "Skyway Fishing Pier", so a transposed digit is
+   caught before it goes in the log rather than when the upload is rejected.
+
+   Both programs publish an API that allows browser requests outright, so the
+   page asks them directly. Everything resolved is kept, because activations
+   happen where there is no signal: the first visit to a park needs a bar of
+   signal, every visit after that does not.
+
+   The name is shown and never stored on the QSO. ADIF has no field for it —
+   MY_SIG_INFO carries the reference, which is what the uploaders read. */
+
+const REF_SOURCES = {
+  pota: {
+    /* US-1916, VE-0001, also 5-digit references */
+    re: /^[A-Z0-9]{1,2}-\d{4,5}$/,
+    url: ref => 'https://api.pota.app/park/' + encodeURIComponent(ref),
+    read: d => d && d.name ? { name: d.name, loc: [d.locationName, d.grid6].filter(Boolean).join(' · ') } : null
+  },
+  sota: {
+    /* W4T/SU-001 — association, region, number */
+    re: /^[A-Z0-9]{1,3}\/[A-Z]{2}-\d{3}$/,
+    url: ref => 'https://api-db2.sota.org.uk/api/summits/' + ref.split('/').map(encodeURIComponent).join('/'),
+    read: d => d && d.name ? {
+      name: d.name,
+      loc: [d.regionName, d.altFt ? d.altFt + ' ft' : '', d.points ? d.points + ' pts' : '']
+             .filter(Boolean).join(' · ')
+    } : null
+  }
+};
+
+const REF_CACHE_KEY = 'w4ggj_ref_names';
+const REF_CACHE_MAX = 400;
+const REF_TIMEOUT   = 6000;
+
+function refCacheRead() {
+  try { return JSON.parse(localStorage.getItem(REF_CACHE_KEY)) || {}; } catch (e) { return {}; }
+}
+
+/* Keyed by program and reference: the same number means different places in
+   different programs. */
+function refCacheGet(id, ref) { return refCacheRead()[id + ':' + ref] || null; }
+
+function refCachePut(id, ref, hit) {
+  const all = refCacheRead();
+  all[id + ':' + ref] = { name: hit.name, loc: hit.loc || '', at: Date.now() };
+  /* Bounded, oldest first, so a lifetime of hunting cannot fill the quota and
+     take the log down with it. */
+  const keys = Object.keys(all);
+  if (keys.length > REF_CACHE_MAX) {
+    keys.sort((a, b) => (all[a].at || 0) - (all[b].at || 0))
+        .slice(0, keys.length - REF_CACHE_MAX)
+        .forEach(k => delete all[k]);
+  }
+  try { localStorage.setItem(REF_CACHE_KEY, JSON.stringify(all)); } catch (e) {}
+}
+
+async function refFetch(id, ref) {
+  const src = REF_SOURCES[id];
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), REF_TIMEOUT) : null;
+  let res;
+  try {
+    res = await fetch(src.url(ref), ctl ? { signal: ctl.signal } : undefined);
+  } finally { if (timer) clearTimeout(timer); }
+  /* A reference that does not exist is an answer, not a failure: say so. */
+  if (res.status === 404 || res.status === 400) return 'unknown';
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const hit = src.read(await res.json());
+  return hit || 'unknown';
+}
+
+function paintRefName(id, state, hit) {
+  const el = $('ref-name-' + id);
+  if (!el) return;
+  el.className = 'ref-name show ' + (state === 'found' ? '' : state);
+  if (state === 'found') {
+    /* Built from nodes, not markup. These strings come from an outside API,
+       and the app's esc() escapes for JS strings rather than for HTML. */
+    el.textContent = '';
+    const n = document.createElement('span');
+    n.className = 'rn-name'; n.textContent = hit.name;
+    el.appendChild(n);
+    if (hit.loc) {
+      const l = document.createElement('span');
+      l.className = 'rn-loc'; l.textContent = ' ' + hit.loc;
+      el.appendChild(l);
+    }
+  } else if (state === 'wait') {
+    el.textContent = 'Looking up…';
+  } else if (state === 'bad') {
+    el.textContent = '';
+    const n = document.createElement('span');
+    n.className = 'rn-name'; n.textContent = 'Not a known reference';
+    el.appendChild(n);
+  } else if (state === 'nosig') {
+    /* No answer is not a verdict. The reference stands as typed. */
+    el.textContent = 'Could not check — reference kept as typed';
+  } else {
+    el.className = 'ref-name';
+    el.textContent = '';
+  }
+}
+
+/* One timer and one generation counter per program, so a slow reply for a
+   reference that has since been retyped cannot overwrite the new one. */
+const refTimers = {}, refSeq = {};
+
+function refLookup(id, raw) {
+  const src = REF_SOURCES[id];
+  if (!src) return;
+  const ref = (raw || '').trim().toUpperCase();
+  const seq = refSeq[id] = (refSeq[id] || 0) + 1;
+  clearTimeout(refTimers[id]);
+
+  if (!ref) { paintRefName(id, 'off'); return; }
+  /* Say nothing while a reference is still being typed. */
+  if (!src.re.test(ref)) { paintRefName(id, 'off'); return; }
+
+  const cached = refCacheGet(id, ref);
+  if (cached) { paintRefName(id, 'found', cached); return; }
+
+  paintRefName(id, 'wait');
+  refTimers[id] = setTimeout(async () => {
+    let out;
+    try { out = await refFetch(id, ref); }
+    catch (e) { out = null; }
+    if (seq !== refSeq[id]) return;              /* retyped while we waited */
+    if (out === 'unknown') paintRefName(id, 'bad');
+    else if (!out)         paintRefName(id, 'nosig');
+    else { refCachePut(id, ref, out); paintRefName(id, 'found', out); }
+  }, 400);
 }
 
 /* ─── POTA Park Search ─── */
@@ -2639,6 +2796,7 @@ let potaTimer = null;
 
 function handleProgRefInput(id, val) {
   if (id === 'pota') potaSearch(val);
+  if (REF_SOURCES[id]) refLookup(id, val);
 }
 
 function potaSearch(q) {
@@ -2674,6 +2832,10 @@ function selectPark(ref, name, loc) {
   if (inp) inp.value = ref;
   const dd = $('pota-dd');
   if (dd) dd.classList.remove('open');
+  /* The list already knows this one; show it at once and let the lookup
+     confirm or correct it against the live directory. */
+  if (name && name !== ref) paintRefName('pota', 'found', { name, loc });
+  refLookup('pota', ref);
 }
 
 function closePotaDropdown(e) {
@@ -3820,6 +3982,7 @@ function loadPrograms(programs) {
     if (ref)  ref.value = (d && d.ref) || '';
     const role = $(`prog-role-${id}`);
     if (role && d && d.role) role.value = d.role;
+    if (REF_SOURCES[id]) refLookup(id, (d && d.ref) || '');
   });
 }
 
@@ -3871,9 +4034,17 @@ function clearForm(keepDt = false) {
   $('lookup-badge').title = '';
   clearTimeout(lookupTimer);
 
+  /* Your own reference is not part of the QSO just logged. It is where you
+     are sitting, and it does not change until you pack up — clearing it
+     meant retyping the park for every contact of an activation. A hunted
+     reference is the other station's and belongs to that contact alone, so
+     that one goes. The GOTA operator field above already works this way. */
   activePrograms.forEach(id => {
+    const role = $(`prog-role-${id}`);
+    const theirs = role && role.value === 'hunter';
     const inp = $(`prog-ref-${id}`);
-    if (inp) inp.value = '';
+    if (inp && theirs) inp.value = '';
+    if (REF_SOURCES[id]) refLookup(id, inp ? inp.value : '');
     const dd = $('pota-dd');
     if (dd) dd.classList.remove('open');
   });
@@ -6092,7 +6263,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-19-41';
+const APP_BUILD = '2026-11-21-42';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
