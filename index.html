@@ -4034,10 +4034,17 @@ function clearForm(keepDt = false) {
   $('lookup-badge').title = '';
   clearTimeout(lookupTimer);
 
+  /* Your own reference is not part of the QSO just logged. It is where you
+     are sitting, and it does not change until you pack up — clearing it
+     meant retyping the park for every contact of an activation. A hunted
+     reference is the other station's and belongs to that contact alone, so
+     that one goes. The GOTA operator field above already works this way. */
   activePrograms.forEach(id => {
+    const role = $(`prog-role-${id}`);
+    const theirs = role && role.value === 'hunter';
     const inp = $(`prog-ref-${id}`);
-    if (inp) inp.value = '';
-    if (REF_SOURCES[id]) refLookup(id, '');
+    if (inp && theirs) inp.value = '';
+    if (REF_SOURCES[id]) refLookup(id, inp ? inp.value : '');
     const dd = $('pota-dd');
     if (dd) dd.classList.remove('open');
   });
