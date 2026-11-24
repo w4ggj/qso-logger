@@ -1528,6 +1528,9 @@ footer {
               </select>
               <button class="btn btn-outline" onclick="pttCaptureKey()"
                 style="padding:7px 10px;font-size:0.62rem;flex:1">KEY: <span id="ptt-key">none</span></button>
+              <button class="btn btn-outline" id="ptt-key-clear" onclick="pttClearKey()"
+                title="Unassign the PTT key" aria-label="Unassign the PTT key"
+                style="padding:7px 10px;font-size:0.62rem;flex:0 0 auto;display:none">&times;</button>
             </div>
           </div>
 
@@ -4885,6 +4888,21 @@ function pttCaptureKey() {
   toast('Press the key to use for PTT — Escape to cancel', 'wrn');
 }
 
+/* Unassign the key. Escape still stops a transmission afterwards; what goes
+   away is the key that starts one. */
+function pttClearKey() {
+  /* In hold mode the release is what unkeys, and it is matched against this
+     binding. Taking the binding away mid-transmission would leave nothing to
+     catch the key coming up and the radio on the air until the dead-man
+     timer. So drop the carrier first, then unbind. */
+  if (pttOn) pttPanic('PTT key cleared');
+  pttCapturing = false;
+  pttHotkey = null;
+  try { localStorage.removeItem(PTT_KEY_KEY); } catch (err) {}
+  toast('PTT key cleared — the on-screen button still works', 'ok');
+  paintPtt();
+}
+
 document.addEventListener('keydown', e => {
   if (pttCapturing) {
     e.preventDefault(); e.stopPropagation();
@@ -4969,6 +4987,9 @@ function paintPtt() {
 
   const k = $('ptt-key');
   if (k) k.textContent = pttCapturing ? 'press a key...' : pttKeyLabel(pttHotkey);
+  /* Nothing assigned, or a capture in progress: nothing to clear. */
+  const kc = $('ptt-key-clear');
+  if (kc) kc.style.display = (pttHotkey && !pttCapturing) ? '' : 'none';
   const m = $('ptt-mode');
   if (m && m.value !== pttMode) m.value = pttMode;
   const mx = $('ptt-max');
@@ -6263,7 +6284,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-21-42';
+const APP_BUILD = '2026-11-24-43';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
