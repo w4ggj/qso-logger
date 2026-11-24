@@ -6,10 +6,13 @@
 <title>TavaOne // QSO Logger</title>
 <script>
   const path = window.location.pathname;
+  /* Keep the query and #fragment: "Open the logger" on the station's page
+     carries its one-use login code in the fragment. */
+  const keep = window.location.search + window.location.hash;
   if (path.endsWith('/index.html')) {
-    window.history.replaceState({}, document.title, path.replace('/index.html', '/'));
+    window.history.replaceState({}, document.title, path.replace('/index.html', '/') + keep);
   } else if (path.endsWith('.html')) {
-    window.history.replaceState({}, document.title, path.substring(0, path.length - 5));
+    window.history.replaceState({}, document.title, path.substring(0, path.length - 5) + keep);
   }
 </script>
 <link rel="icon" type="image/png" href="favicon.ico">
@@ -1474,7 +1477,7 @@ footer {
 
           <div class="sec-label green" style="margin-top:16px">CAT &mdash; Rig Control</div>
 
-          <div style="margin-bottom:6px;">
+          <div style="margin-bottom:6px;" id="rig-model-row">
             <select id="rig-model" onchange="setRigModel(this.value)" style="width:100%"
               title="Which radio is on the other end of the cable"></select>
             <div id="rig-untested" class="rig-untested" style="display:none">
@@ -1488,7 +1491,15 @@ footer {
               title="How to reach the cable">
               <option value="serial">Serial port &mdash; desktop</option>
               <option value="usb">USB direct &mdash; Android</option>
+              <option value="station">TavaOne station &mdash; N4TAV lab IC-7300 online</option>
             </select>
+            <div class="udp-help" id="rig-station-help" style="display:none;margin-top:6px">
+              Connects over the internet to the N4TAV lab IC-7300 at <code>rig.tavaone.dev</code>: no cable,
+              COM port or Tibbo. Log in by pressing <strong>Open the logger</strong> on the station&rsquo;s
+              <a href="https://rig.tavaone.dev/station" target="_blank" rel="noopener">schedule page</a>; after that
+              it reconnects by itself. It follows the frequency and mode and can change them during your booked
+              time. It never transmits: talk with the station&rsquo;s radio window or the home helper&rsquo;s PTT key.
+            </div>
           </div>
 
           <div class="rig-row">
@@ -1498,7 +1509,7 @@ footer {
             <button class="btn btn-outline" id="rig-btn" onclick="rigToggle()" style="padding:7px 10px;font-size:0.62rem;flex:1">CONNECT RIG</button>
           </div>
 
-          <div class="rig-row" style="margin-top:6px;">
+          <div class="rig-row" style="margin-top:6px;" id="rig-line-row">
             <select id="rig-data"   onchange="setRigParam('data', this.value)"   title="Data bits"></select>
             <select id="rig-stop"   onchange="setRigParam('stop', this.value)"   title="Stop bits"></select>
             <select id="rig-parity" onchange="setRigParam('parity', this.value)" title="Parity"></select>
@@ -4806,6 +4817,9 @@ let pttCapturing = false;
 
 function rigCanTx() {
   const d = RIG_TYPES[rigType];
+  /* The station never keys from the logger: talk through its radio window
+     or the home helper's PTT key. */
+  if (rigLinkKind === 'station') return false;
   return !!(rigConnected && d && d.tx);
 }
 
@@ -5519,7 +5533,7 @@ function paintRigType() {
   paintRigParams();
 
   const addr = $('rig-addr');
-  if (addr) addr.style.display = spec.addr ? '' : 'none';   // CI-V address is Icom-only
+  if (addr) addr.style.display = (spec.addr && rigLinkKind !== 'station') ? '' : 'none';   // CI-V address is Icom-only; the station has no cable
   document.querySelectorAll('.rig-help-civ').forEach(e => { e.style.display = spec.addr ? '' : 'none'; });
   document.querySelectorAll('.rig-help-yaesu').forEach(e => { e.style.display = spec.addr ? 'none' : ''; });
 }
@@ -5528,14 +5542,25 @@ function usbSupported() { return !!navigator.usb; }
 
 function paintRigLink() {
   const sel = $('rig-link');
-  if (sel) sel.value = rigLinkKind;
-  const row = $('rig-link-row');
-  // Nothing to choose when the browser has no WebUSB — the serial path is it
-  if (row) row.style.display = usbSupported() ? '' : 'none';
+  if (sel) {
+    // Offer only what this browser can do; the station needs nothing but a connection
+    [...sel.options].forEach(o => {
+      o.hidden = (o.value === 'usb' && !usbSupported()) || (o.value === 'serial' && !rigSupported());
+    });
+    sel.value = rigLinkKind;
+  }
+  const st = rigLinkKind === 'station';
+  /* No cable, so no baud, address or line settings to show */
+  ['rig-baud', 'rig-addr', 'rig-line-row', 'rig-model-row'].forEach(id => { const e = $(id); if (e) e.style.display = st ? 'none' : ''; });
+  if (!st) paintRigType();
+  const help = $('rig-station-help');
+  if (help) help.style.display = st ? '' : 'none';
+  const btn = $('rig-btn');
+  if (btn && st) { btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; }
 }
 
 function setRigLink(v) {
-  if (v !== 'serial' && v !== 'usb') return;
+  if (v !== 'serial' && v !== 'usb' && v !== 'station') return;
   if (v === rigLinkKind) return;
   if (rigConnected) {
     try { localStorage.removeItem(RIG_AUTO_KEY); } catch (e) {}
@@ -5543,6 +5568,7 @@ function setRigLink(v) {
   }
   rigLinkKind = v;
   try { localStorage.setItem(RIG_LINK_KEY, v); } catch (e) {}
+  if (v === 'station' && rigModel !== 'icom-7300') setRigModel('icom-7300');
   paintRigLink();
 }
 
@@ -5596,6 +5622,269 @@ function buildRigModelOptions() {
   }
 }
 
+/* ─── TavaOne station: the N4TAV lab IC-7300 over the internet ───
+   A third transport beside Web Serial and WebUSB. It speaks to the station's
+   relay (rig.tavaone.dev) instead of a cable, and answers the logger's CI-V
+   frames itself, like an IC-7300 on address 94 — so the whole CI-V driver
+   above (polling, command 26, mode buttons, wheel tuning) runs unchanged.
+
+   Reads come from the latest state the station sent, so polling ten times a
+   second never crosses the internet. Frequency and mode changes go to the lab,
+   which runs its own transmit gate and booking rules. It never keys: the relay
+   refuses anything from a logger login but reading and tuning, and this side
+   answers a transmit command with NG as well. Talk with the station's radio
+   window or the home helper's PTT key.
+
+   Logging in: "Open the logger" on rig.tavaone.dev/station opens this page
+   with a one-use code in the #fragment (never sent to this site's server).
+   The station trades it for a 30-day logger-only login kept here, so a
+   refresh or a relay restart reconnects without the operator doing anything. */
+const STATION_WS = 'wss://rig.tavaone.dev/ws/client';
+const STATION_PAGE = 'https://rig.tavaone.dev/station';
+const STATION_TOKEN_KEY = 'w4ggj_station_token';
+const STATION_ADDR = 0x94;
+const STATION_MODES = { 0: 'LSB', 1: 'USB', 2: 'AM', 3: 'CW', 4: 'RTTY', 5: 'FM', 7: 'CW-R', 8: 'RTTY-R' };
+const STATION_MODE_CODE = { LSB: 0, USB: 1, AM: 2, CW: 3, RTTY: 4, FM: 5, 'CW-R': 7, 'RTTY-R': 8 };
+let stationCode = null;      // one-use code from the station page, spent on the next connect
+
+function stationOpenLink() {
+  return new Promise((resolve, reject) => {
+    const q = [];
+    let wake = null, closed = false, settled = false, ws = null;
+    let snap = null, you = null, cid = null, holder = null, agentOnline = false;
+    let wantClaim = true, wasHolder = false, lastNote = '';
+    let seq = 0, backoff = 1000, hbTimer = null, claimTimer = null, retryTimer = null;
+    const pend = new Map();
+    let inBuf = [];
+    let chain = Promise.resolve();
+
+    const radio = () => (snap && snap.radio) || null;
+    const isHolder = () => !!(holder && you && holder.passId === you.id
+      && (Array.isArray(holder.cids) ? holder.cids.includes(cid) : holder.cid === cid));
+    const push = bytes => { q.push(bytes); if (wake) { const w = wake; wake = null; w(); } };
+    const send = o => {
+      if (!ws || ws.readyState !== 1) return false;
+      try { ws.send(JSON.stringify(o)); return true; } catch (e) { return false; }
+    };
+    const op = (name, args) => new Promise((res, rej) => {
+      const id = 'q' + (++seq);
+      if (!send({ t: 'op', id, op: name, args: args || {} })) return rej(new Error('not connected to the station'));
+      const tm = setTimeout(() => { if (pend.delete(id)) rej(new Error('no answer from the station')); }, 8000);
+      pend.set(id, { res, rej, tm });
+    });
+    /* Say why a change was refused (the lab's gate gives real reasons: no
+       privileges here, not your booked time), but not on every wheel click. */
+    const note = (txt, type) => {
+      if (!txt || txt === lastNote) return;
+      lastNote = txt;
+      setTimeout(() => { if (lastNote === txt) lastNote = ''; }, 15000);
+      toast('Station: ' + txt, type || 'wrn');
+    };
+    const claim = () => { if (agentOnline) send({ t: 'claim' }); };
+
+    function onMsg(m) {
+      switch (m.t) {
+        case 'hello':
+          if (m.loggerToken) { try { localStorage.setItem(STATION_TOKEN_KEY, m.loggerToken); } catch (e) {} }
+          stationCode = null;
+          you = m.you; cid = m.cid; holder = m.holder; agentOnline = !!m.agentOnline;
+          backoff = 1000;
+          clearInterval(hbTimer);
+          hbTimer = setInterval(() => send({ t: 'hb' }), 1000);
+          op('getState').catch(() => {});
+          if (wantClaim || (holder && you && holder.passId === you.id)) claim();
+          if (!agentOnline) note('the lab station is offline right now');
+          if (!settled) { settled = true; link.label = 'TavaOne station · ' + (you && you.callsign || ''); resolve(link); }
+          else if (rigConnected) setRigStatus('ok', 'Station reconnected');
+          return;
+        case 'denied':
+          link.deniedMsg = m.error || 'not allowed';
+          return;
+        case 'agent':
+          agentOnline = !!m.online;
+          if (agentOnline && wantClaim && !isHolder()) claim();
+          if (!agentOnline) note('the lab station went offline');
+          return;
+        case 'holder': {
+          holder = m.holder || null;
+          const mine = isHolder();
+          /* The booking ended or was released from the radio window: stop
+             asking for the radio, so the logger never takes it back by itself.
+             If the same login takes it again (radio window, helper), join. */
+          if (wasHolder && !holder) wantClaim = false;
+          if (holder && you && holder.passId === you.id && !mine) claim();
+          wasHolder = mine;
+          return;
+        }
+        case 'claimed':
+          if (!m.ok && m.error && wantClaim) note(m.error + ' — the logger follows the radio but cannot tune it yet', '');
+          return;
+        case 'state': snap = m.snap; return;
+        case 'res': {
+          if (m.snap) snap = m.snap;
+          const p = pend.get(m.id);
+          if (!p) return;
+          pend.delete(m.id); clearTimeout(p.tm);
+          if (m.ok) p.res(m.result); else p.rej(Object.assign(new Error(m.error || 'refused'), { refused: !!m.refused }));
+          return;
+        }
+        default:
+      }
+    }
+
+    function connect() {
+      const token = stationCode || (() => { try { return localStorage.getItem(STATION_TOKEN_KEY); } catch (e) { return null; } })();
+      if (!token) {
+        reject(new Error('not logged in to the station — press Open the logger on ' + STATION_PAGE));
+        closed = true;
+        return;
+      }
+      link.deniedMsg = '';
+      try { ws = new WebSocket(STATION_WS); } catch (e) { reject(e); closed = true; return; }
+      const me = ws;
+      ws.onopen = () => me.send(JSON.stringify({ t: 'auth', token, app: 'logger' }));
+      ws.onmessage = ev => {
+        if (me !== ws || typeof ev.data !== 'string') return;
+        let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+        onMsg(m);
+      };
+      ws.onclose = () => {
+        if (me !== ws) return;
+        ws = null;
+        clearInterval(hbTimer); clearInterval(claimTimer);
+        for (const [, p] of pend) { clearTimeout(p.tm); p.rej(new Error('station connection lost')); }
+        pend.clear();
+        if (closed) return;
+        if (link.deniedMsg) {
+          /* A login that no longer works is forgotten, so the next connect
+             says to log in again rather than failing the same way. */
+          if (!stationCode && /expired|not valid|log in|no longer/.test(link.deniedMsg)) {
+            try { localStorage.removeItem(STATION_TOKEN_KEY); } catch (e) {}
+          }
+          closed = true;
+          if (!settled) { settled = true; reject(new Error(link.deniedMsg)); return; }
+          if (rigLink === link) rigDisconnect(false, 'Station: ' + link.deniedMsg);
+          return;
+        }
+        if (!settled) { settled = true; closed = true; reject(new Error('could not reach the station')); return; }
+        /* Lost the connection (a relay restart, the Wi-Fi): keep the rig
+           "connected" with the last reading and try again, backing off. */
+        if (rigConnected && rigLink === link) setRigStatus('err', 'Station connection lost — reconnecting…');
+        retryTimer = setTimeout(() => { if (!closed) connect(); }, backoff);
+        backoff = Math.min(backoff * 2, 15000);
+      };
+      ws.onerror = () => {};
+      clearInterval(claimTimer);
+      claimTimer = setInterval(() => { if (wantClaim && !isHolder()) claim(); }, 30000);
+    }
+
+    /* One CI-V frame from the logger → the reply frames a 7300 would send. */
+    async function answer(cmd, b) {
+      const r = radio();
+      const OK = [[0xFB]];
+      const ng = () => { throw Object.assign(new Error('not available'), { ng: true }); };
+      switch (cmd) {
+        case 0x03: return r && r.freq ? [[0x03, ...civEncodeFreq(r.freq)]] : [];
+        case 0x04: return r && r.mode ? [[0x04, STATION_MODE_CODE[r.mode] ?? 1, r.filter || 1]] : [];
+        case 0x05: {
+          if (b.length < 5) ng();
+          await op('setFreq', { hz: civDecodeFreq(b.slice(0, 5)) });
+          return OK;
+        }
+        case 0x06: {
+          const mode = STATION_MODES[b[0]];
+          if (!mode) ng();
+          await op('setMode', { mode, dataMode: !!(r && r.dataMode), filter: b[1] || null });
+          return OK;
+        }
+        case 0x26: {
+          if (b[0] !== 0x00) ng();
+          if (b.length === 1) return r && r.mode ? [[0x26, 0x00, STATION_MODE_CODE[r.mode] ?? 1, r.dataMode ? 1 : 0, r.filter || 1]] : [];
+          const mode = STATION_MODES[b[1]];
+          if (!mode) ng();
+          await op('setMode', { mode, dataMode: !!b[2], filter: b[3] || null });
+          return OK;
+        }
+        case 0x1C:
+          if (b[0] === 0x00 && b.length === 1) return [[0x1C, 0x00, r && r.ptt ? 1 : 0]];
+          return ng();                       // never keys from here
+        case 0x19:
+          if (b[0] === 0x00) return [[0x19, 0x00, STATION_ADDR]];
+          return ng();
+        default: return ng();
+      }
+    }
+
+    function frameIn(f) {
+      // FE FE <to> <from> <cmd> [data…] FD
+      const to = f[2], from = f[3], cmd = f[4], body = f.slice(5, f.length - 1);
+      if (to !== STATION_ADDR && to !== 0x00) return;
+      chain = chain.then(async () => {
+        let replies;
+        try { replies = await answer(cmd, body); }
+        catch (e) {
+          if (!e.ng && e.refused) note(e.message);
+          else if (!e.ng && rigLink === link && cmd !== 0x03) note(e.message, '');
+          replies = to === 0x00 ? [] : [[0xFA]];
+        }
+        for (const r of replies) push(new Uint8Array([0xFE, 0xFE, from, STATION_ADDR, ...r, 0xFD]));
+      });
+    }
+
+    const link = {
+      kind: 'station', label: 'TavaOne station', deniedMsg: '',
+      async write(bytes) {
+        for (const x of bytes) inBuf.push(x);
+        let s;
+        while ((s = inBuf.indexOf(0xFE)) !== -1) {
+          if (inBuf[s + 1] !== 0xFE) { inBuf.splice(0, s + 1); continue; }
+          const e = inBuf.indexOf(0xFD, s + 2);
+          if (e === -1) { if (s > 0) inBuf.splice(0, s); break; }
+          const f = inBuf.slice(s, e + 1);
+          inBuf.splice(0, e + 1);
+          if (f.length >= 6) frameIn(f);
+        }
+        if (inBuf.length > 512) inBuf = [];
+      },
+      async read() {
+        while (!closed) {
+          if (q.length) return q.shift();
+          await new Promise(r => { wake = r; });
+        }
+        return null;
+      },
+      /* Closing never releases the booking: the radio window or the helper
+         may still be using it. */
+      async close() {
+        closed = true;
+        clearInterval(hbTimer); clearInterval(claimTimer); clearTimeout(retryTimer);
+        const w = ws; ws = null;
+        try { if (w) w.close(1000, 'logger closed'); } catch (e) {}
+        if (wake) { const x = wake; wake = null; x(); }
+      }
+    };
+    connect();
+  });
+}
+
+/* "Open the logger" lands here with #tavarig=<code>. Take the code out of the
+   address bar straight away (it is one-use, but there is no reason to leave it
+   in history), switch to the station and connect. */
+function stationFromHash() {
+  const m = /[#&]tavarig=(lp_[A-Za-z0-9_-]{10,60})/.exec(location.hash || '');
+  if (!m) return false;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  stationCode = m[1];
+  (async () => {
+    if (rigLinkKind !== 'station') setRigLink('station');
+    else if (rigConnected) await rigDisconnect(true);
+    if (rigModel !== 'icom-7300') setRigModel('icom-7300');
+    await rigConnect(null, false);
+  })();
+  return true;
+}
+window.addEventListener('hashchange', stationFromHash);
+
 function rigSupported() { return 'serial' in navigator; }
 
 function toggleRigHelp() {
@@ -5642,7 +5931,7 @@ function rigToggle() {
 /* `port` skips the browser picker (used by the reconnect-on-load path);
    `auto` keeps that path quiet when there is nothing to reconnect to. */
 async function rigConnect(port, auto) {
-  if (!rigSupported()) {
+  if (rigLinkKind !== 'station' && !rigSupported()) {
     if (!auto) toast('Web Serial not supported — use Chrome or Edge on desktop', 'err');
     return;
   }
@@ -5654,7 +5943,13 @@ async function rigConnect(port, auto) {
       rigCivAddr = parseInt(($('rig-addr').value || '58'), 16);
       if (isNaN(rigCivAddr)) rigCivAddr = 0x58;
     }
-    if (rigLinkKind === 'usb') {
+    if (rigLinkKind === 'station') {
+      /* The station is always an IC-7300 on 94h; there is no cable to set up. */
+      if (rigModel !== 'icom-7300') setRigModel('icom-7300');
+      rigCivAddr = STATION_ADDR;
+      setRigStatus('off', 'Connecting to the station\u2026');
+      rigLink = await stationOpenLink();
+    } else if (rigLinkKind === 'usb') {
       if (!usbSupported()) throw new Error('This browser has no WebUSB');
       // filters:[] so an unrecognised cable can still be picked and named
       const dev = port || await navigator.usb.requestDevice({ filters: [] });
@@ -5711,7 +6006,9 @@ async function rigConnect(port, auto) {
        staring at "reading..." while the radio is fed bytes it cannot parse. */
     clearTimeout(rigQuietTimer);
     rigQuietTimer = setTimeout(() => {
-      if (rigConnected && !rigLastHz) {
+      if (rigConnected && !rigLastHz && rigLinkKind === 'station') {
+        setRigStatus('err', 'No reading from the station yet');
+      } else if (rigConnected && !rigLastHz) {
         setRigStatus('err', 'No reply — check the baud matches the radio');
         toast('No reply from the radio. The baud almost certainly does not match '
             + 'the rate set in its menu — disconnect and try another.', 'wrn');
@@ -5776,6 +6073,13 @@ function rememberRigPort() {
 
 async function rigAutoReconnect() {
   if (localStorage.getItem(RIG_AUTO_KEY) !== '1') return;
+  if (rigLinkKind === 'station') {
+    /* Nothing to grant: the saved station login reconnects on its own */
+    if (!localStorage.getItem(STATION_TOKEN_KEY)) return;
+    setRigStatus('off', 'Reconnecting to the station\u2026');
+    await rigConnect(null, true);
+    return;
+  }
   if (rigLinkKind === 'usb' ? !usbSupported() : !rigSupported()) return;
   try {
     // Already-granted devices — neither call needs a user gesture
@@ -6263,7 +6567,7 @@ function mobToggle() {
 
    Bump BOTH APP_BUILD and version.json on every deploy.
 ══════════════════════════════════════════ */
-const APP_BUILD = '2026-11-21-42';
+const APP_BUILD = '2026-11-24-43';
 
 function paintBuild(serverBuild) {
   const stale = !!serverBuild && serverBuild !== APP_BUILD;
@@ -6356,11 +6660,11 @@ paintPin();
     if (first) rigModel = first.id;
   }
   const savedLink = localStorage.getItem(RIG_LINK_KEY);
-  if (savedLink === 'usb' || savedLink === 'serial') rigLinkKind = savedLink;
-  paintRigLink();
+  if (savedLink === 'usb' || savedLink === 'serial' || savedLink === 'station') rigLinkKind = savedLink;
   const savedAddr = localStorage.getItem('w4ggj_rig_addr');
   if (savedAddr && $('rig-addr')) $('rig-addr').value = savedAddr;
   paintRigType();                  // builds the baud list for this rig, restores its saved rate
+  paintRigLink();                  // after the model, so the station can hide what it doesn't use
   rigAutofill = localStorage.getItem('w4ggj_rig_autofill') !== '0';
   /* Opt-in only: an absent setting means down, so an upgrade can never
      inherit a raised line from the build that used to raise one. */
@@ -6379,7 +6683,9 @@ paintPin();
   paintPtt();
   paintRigDtr();
   paintAutofill();
-  if (!rigSupported() && !usbSupported()) {
+  if (stationFromHash()) {
+    /* Opened from the station's schedule page: connect straight to it */
+  } else if (!rigSupported() && !usbSupported() && rigLinkKind !== 'station') {
     const btn = $('rig-btn');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.cursor = 'not-allowed'; }
     setRigStatus('off', 'Needs Chrome or Edge');

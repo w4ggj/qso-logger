@@ -193,6 +193,25 @@ visitor could read — that is gone.)
 Pick the radio in **Settings → CAT — Rig Control**, set the baud to match the
 radio's menu, then click **CONNECT RIG** and choose the cable's serial port.
 
+### TavaOne station (the N4TAV lab IC-7300, online)
+
+The lab radio at [rig.tavaone.dev](https://rig.tavaone.dev) needs no cable, COM
+port or Tibbo virtual port. Press **Open the logger** on the station's schedule
+page: the logger opens with a one-use code in its `#fragment`, switches the
+connection to **TavaOne station**, and connects. The station trades the code for
+a 30-day logger-only login kept in this browser, so a refresh or a relay restart
+reconnects on its own.
+
+Underneath, the station link is a third transport beside Web Serial and WebUSB.
+It answers the CI-V driver's frames itself, like an IC-7300 on address 94
+(`03`, `04`, `05`, `06`, `26`, `19`), from the latest state the station sent, so
+polling never crosses the internet; frequency and mode changes go to the lab,
+which applies its own licence gate and booking rules and says why when it
+refuses. It never transmits: the station refuses anything from a logger login
+but reading and tuning, and a `1C` key command gets NG here as well. Talk with
+the station's radio window or the home helper's PTT key. Closing or
+disconnecting the logger never ends the booking.
+
 | | Icom IC-706MKIIG | Yaesu FT-991A |
 |---|---|---|
 | Protocol | CI-V, binary frames | Yaesu CAT, ASCII terminated with `;` |
